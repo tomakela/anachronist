@@ -18,15 +18,19 @@ on entity.take(target) {
 // Runtime expansion is atomic: none of these commands can start until the
 // parser has accepted and expanded the complete sequence.
 on entity.use_item(item, target) {
-    if (item == key) {
-        sequence {
-            walk player to key;
-            take key;
-            walk player to door;
-            set door.open = true;
-            say "The key turns in the lock.";
-            wait 30 ticks;
-            enter room garden at entry;
+    if (target == door) {
+        if (item == key) {
+            sequence {
+                walk player to key;
+                take key;
+                walk player to door;
+                set door.open = true;
+                say "The key turns in the lock.";
+                wait 30 ticks;
+                enter room garden at entry;
+            }
+        } else {
+            say "I can't do that.";
         }
     } else {
         say "I can't do that.";
