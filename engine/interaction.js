@@ -50,4 +50,19 @@ export function prepareItemUse(commands, world) {
   return prepared;
 }
 
+/** Return trigger ids which have just been entered, while tracking occupancy. */
+export function enteredTriggers(point, triggers, occupied = new Set()) {
+  const next = new Set();
+  const entered = [];
+  for (const [id, rect] of Object.entries(triggers)) {
+    if (pointInside(point, rect)) {
+      next.add(id);
+      if (!occupied.has(id)) entered.push(id);
+    }
+  }
+  return { occupied: next, entered };
+}
+
+const pointInside = ([x, y], [bx, by, bw, bh]) => x >= bx && y >= by && x < bx + bw && y < by + bh;
+
 const title = (value) => value[0].toUpperCase() + value.slice(1);
