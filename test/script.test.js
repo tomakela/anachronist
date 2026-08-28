@@ -18,6 +18,14 @@ test("a handler is fully expanded into an ordered command chain", () => {
   assert.equal(instantiate(handler, ["stone", "door"])[0].value, "No");
 });
 
+test("handlers can branch on game-global state", () => {
+  const [handler] = compile(`on room.enter() {
+    if (game.key_taken == true) { hide key; }
+  }`);
+  assert.deepEqual(instantiate(handler, [], { game: { key_taken: true } }).map(({ op, target }) => [op, target]), [["hide", "key"]]);
+  assert.deepEqual(instantiate(handler, [], { game: { key_taken: false } }), []);
+});
+
 test("INI parser rejects duplicate package values", () => {
   assert.throws(() => parseIni("[display]\nwidth=1\nwidth=2"), /duplicate key/);
 });

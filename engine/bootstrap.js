@@ -29,7 +29,7 @@ async function boot() {
 class Runtime {
   constructor(game, ui, rooms, graphics, animations, bitmaps, handlers) {
     Object.assign(this, { game, ui, rooms, graphics, animations, bitmaps, handlers });
-    this.entities = Object.create(null); this.inventory = []; this.inventoryEntities = Object.create(null);
+    this.entities = Object.create(null); this.inventory = []; this.inventoryEntities = Object.create(null); this.globals = Object.create(null);
     this.activeVerb = null; this.firstObject = null; this.hoverTarget = null; this.queue = []; this.message = ""; this.messageKind = ""; this.messageTicks = 0; this.actionSentence = ""; this.tick = 0;
     this.width = integer(game.display.logical_width, "logical_width"); this.height = integer(game.display.logical_height, "logical_height");
     this.canvas = document.createElement("canvas"); this.canvas.width = this.width; this.canvas.height = this.height;
@@ -47,8 +47,9 @@ class Runtime {
     this.canvas.addEventListener("keydown", (event) => { if (event.key === "Escape") this.clearSelection(); });
     this.canvas.focus(); this.last = performance.now(); requestAnimationFrame((now) => this.frame(now));
   }
-  dispatch(event, args) { const handler = this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length); if (!handler) return 0; const commands = instantiate(handler, args); this.queue.push(...commands); return commands.length; }
-  commands(event, args) { const handler = this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length); return handler ? instantiate(handler, args) : null; }
+  scriptState() { return { game: this.globals }; }
+  dispatch(event, args) { const handler = this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length); if (!handler) return 0; const commands = instantiate(handler, args, this.scriptState()); this.queue.push(...commands); return commands.length; }
+  commands(event, args) { const handler = this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length); return handler ? instantiate(handler, args, this.scriptState()) : null; }
   enter(id, spawn) {
     const room = this.rooms[id]; if (!room) throw new Error(`Unknown room ${id}`); this.room = id; this.entities = Object.create(null);
     for (const [section, values] of Object.entries(room)) if (section.startsWith("entity.")) this.entities[section.slice(7)] = { id: section.slice(7), ...values, position: tuple(values.position, 2, `${section}.position`) };
@@ -112,7 +113,7 @@ class Runtime {
     else if (command.op === "animate") { const actor = this.entities[command.actor]; if (actor) { actor.moving = false; actor.action = command.animation; actor.actionTicks = this.animationDuration(command.animation, actor.facing); } }
     else if (command.op === "take") { const entity = this.entities[command.target]; if (entity && !this.inventory.includes(command.target)) { if (!command.animated) { this.queue.unshift({ ...command, animated: true }); this.queue.unshift({ op: "animate", actor: "player", animation: "pickup" }); return; } entity.visible = "false"; this.inventoryEntities[command.target] = { ...entity }; this.inventory.push(command.target); } }
     else if (command.op === "hide" || command.op === "show") this.entities[command.target].visible = command.op === "show" ? "true" : "false";
-    else if (command.op === "set") { const [id, field] = command.target.split("."); if (id === "game") this[id] ??= {}, this[id][field] = command.value; else this.entities[id][field] = String(command.value); }
+    else if (command.op === "set") { const [id, field] = command.target.split("."); if (id === "game") this.globals[field] = command.value; else this.entities[id][field] = String(command.value); }
     else if (command.op === "wait") this.queue.unshift(...Array(command.ticks).fill({ op: "pause" }));
     else if (command.op === "pause") return;
     else if (command.op === "face") this.entities[command.actor].facing = command.direction;

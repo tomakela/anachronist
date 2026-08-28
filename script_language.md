@@ -44,6 +44,13 @@ State must be explicitly scoped as `game`, `room`, or `entity`. Ordinary local
 variables use `let` and disappear when their call finishes unless captured by a
 serializable suspended coroutine.
 
+The version 1 interpreter resolves qualified `game.field` expressions against
+persistent VM globals and applies `set game.field` commands outside room-local
+state. Scripts use these fields for facts that must survive room
+reconstruction. Taking an entity deliberately does not modify its room file:
+the demo sets `game.key_taken` when acquiring the key, then tests that global
+and hides the original room entity when the player returns to the hall.
+
 ## 3. Types and expressions
 
 Primitive types are `bool`, `int`, `fixed`, `string`, and `null`. Domain types
