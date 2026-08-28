@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compile, instantiate } from "../engine/script.js";
+import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { loadBitmaps } from "../engine/bitmaps.js";
@@ -50,4 +50,10 @@ test("using the key on a non-door does not enqueue a walk", () => {
   }`;
   const commands = instantiate(compile(source)[0], ["key", "clock"]);
   assert.deepEqual(commands.map(({ op }) => op), ["say"]);
+});
+
+test("dialogue duration is configured from character count", () => {
+  const runtime = { text_base_ticks: "30", text_ticks_per_character: "4", text_minimum_ticks: "90" };
+  assert.equal(textDuration("short", runtime), 90);
+  assert.equal(textDuration("a sufficiently long sentence", runtime), 142);
 });

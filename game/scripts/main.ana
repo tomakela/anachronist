@@ -7,6 +7,14 @@ on game.start() {
 
 on entity.look(target) {
     say "That looks interesting.";
+    say "There may be more to discover here.";
+}
+
+on entity.walk(target) {
+    if (target == gate) {
+        walk player to gate;
+        enter room hall at garden;
+    }
 }
 
 on entity.take(target) {

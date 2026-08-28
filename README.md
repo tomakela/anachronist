@@ -37,3 +37,12 @@ previews the complete command sentence, while starting an interaction interrupts
 the current walk. Entity `position` values denote configurable sprite origins
 (the center by default), letting walk targets line up naturally with feet or
 knees. Taking and using objects also play directional one-shot animations.
+
+Verb sentence prepositions are package data (`preposition = at` makes the
+**Look** action read “Look at …”). Whether **Use** is direct or waits for an
+“on” target is determined by the script events: room entities dispatch
+`entity.use`, while choosing an inventory item composes and dispatches
+`entity.use_item`. Dialogue can contain any number of consecutive `say` or
+`narrate` commands; each is displayed in order, with its duration calculated
+from the configurable base, per-character, and minimum tick values in
+`game.ini`.
