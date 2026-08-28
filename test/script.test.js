@@ -5,6 +5,7 @@ import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { loadBitmaps } from "../engine/bitmaps.js";
+import { prepareItemUse, verbSentence } from "../engine/interaction.js";
 
 test("a handler is fully expanded into an ordered command chain", () => {
   const [handler] = compile(`module demo; on entity.use_item(item, target) {
@@ -62,5 +63,39 @@ test("dialogue duration is configured from character count", () => {
 test("the configured verb sentences use only the intended prepositions", async () => {
   const ui = parseIni(await readFile(new URL("../game/interface.ini", import.meta.url), "utf8"));
   assert.equal(ui["verb.look"].preposition, "at");
-  assert.equal(ui["verb.use"].preposition, undefined);
+  assert.equal(ui["verb.use"].object_preposition, "on");
+  const label = (id) => id;
+  assert.equal(verbSentence(ui, label, "look", "clock"), "Look at clock");
+  assert.equal(verbSentence(ui, label, "use", "key"), "Use key");
+  assert.equal(verbSentence(ui, label, "use", "key", "door"), "Use key on door");
+});
+
+test("ground item use walks, takes, approaches, and uses in order", () => {
+  const commands = instantiate(compile(`on entity.use_item(item, target) {
+    walk player to item; take item; walk player to target; set door.open = true;
+  }`)[0], ["key", "door"]);
+  const world = { inventory: [], entities: {
+    player: { visible: "true" }, key: { visible: "true" }, door: { visible: "true" }
+  }, rooms: {} };
+  assert.deepEqual(prepareItemUse(commands, world).map(({ op, target }) => [op, target]), [
+    ["walk", "key"], ["take", "key"], ["walk", "door"], ["animate", undefined], ["set", "door.open"]
+  ]);
+});
+
+test("inventory item use never returns to the item's former room position", () => {
+  const commands = instantiate(compile(`on entity.use_item(item, target) {
+    walk player to item; take item; walk player to target; say "Used";
+  }`)[0], ["key", "door"]);
+  const world = { inventory: ["key"], entities: {
+    player: { visible: "true" }, key: { visible: "false" }, door: { visible: "true" }
+  }, rooms: {} };
+  assert.deepEqual(prepareItemUse(commands, world).map(({ op, target }) => [op, target]), [
+    ["walk", "door"], ["animate", undefined], ["say", undefined]
+  ]);
+});
+
+test("an invalid item-use tail rejects the entire transaction", () => {
+  const commands = [{ op: "walk", actor: "player", target: "key" }, { op: "take", target: "key" }, { op: "walk", actor: "player", target: "missing" }];
+  const world = { inventory: [], entities: { player: { visible: "true" }, key: { visible: "true" } }, rooms: {} };
+  assert.equal(prepareItemUse(commands, world), null);
 });

@@ -2,6 +2,7 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { loadBitmaps } from "./bitmaps.js";
+import { prepareItemUse, verbSentence } from "./interaction.js";
 
 const root = document.querySelector("#engine-host");
 const entry = document.querySelector('meta[name="game-entry"]')?.content;
@@ -47,6 +48,7 @@ class Runtime {
     this.canvas.focus(); this.last = performance.now(); requestAnimationFrame((now) => this.frame(now));
   }
   dispatch(event, args) { const handler = this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length); if (!handler) return 0; const commands = instantiate(handler, args); this.queue.push(...commands); return commands.length; }
+  commands(event, args) { const handler = this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length); return handler ? instantiate(handler, args) : null; }
   enter(id, spawn) {
     const room = this.rooms[id]; if (!room) throw new Error(`Unknown room ${id}`); this.room = id; this.entities = Object.create(null);
     for (const [section, values] of Object.entries(room)) if (section.startsWith("entity.")) this.entities[section.slice(7)] = { id: section.slice(7), ...values, position: tuple(values.position, 2, `${section}.position`) };
@@ -77,11 +79,12 @@ class Runtime {
       return;
     }
     if (this.activeVerb === "use") {
-      if (!this.firstObject && target && this.inventory.includes(target)) { this.firstObject = target; return; }
-      if (!this.firstObject) this.perform("use", target);
+      if (!this.firstObject && target) { this.firstObject = target; return; }
       else if (target) {
-        this.interruptCommands(); this.actionSentence = this.verbSentence("use", this.firstObject, target); this.dispatch("entity.use_item", [this.firstObject, target]);
-        const lastWalk = this.queue.findLastIndex(({ op }) => op === "walk"); this.queue.splice(lastWalk + 1, 0, { op: "animate", actor: "player", animation: "use" });
+        this.interruptCommands(); this.actionSentence = this.verbSentence("use", this.firstObject, target);
+        const commands = this.commands("entity.use_item", [this.firstObject, target]);
+        const prepared = commands && prepareItemUse(commands, this);
+        if (prepared) this.queue.push(...prepared);
       }
     } else this.perform(this.activeVerb, target);
     this.clearSelection();
@@ -92,7 +95,7 @@ class Runtime {
     return this.inventory.find((id, i) => id !== this.firstObject && inside(x, y, [origin[0] + i * itemWidth, origin[1], itemWidth, itemHeight])) || Object.values(this.entities).reverse().find((entity) => entity.id !== "player" && entity.id !== this.firstObject && entity.visible !== "false" && inside(x, y, this.bounds(entity)))?.id;
   }
   perform(verb, target) { if (!target) return; this.interruptCommands(); this.actionSentence = this.verbSentence(verb, target); if (verb === "use") this.queue.push({ op: "animate", actor: "player", animation: "use" }); this.dispatch(`entity.${verb}`, [target]); }
-  verbSentence(verb, first, second) { const preposition = this.ui[`verb.${verb}`]?.preposition; return [title(verb), second ? this.label(first) : preposition, second ? preposition : null, this.label(second || first)].filter(Boolean).join(" "); }
+  verbSentence(verb, first, second) { return verbSentence(this.ui, (id) => this.label(id), verb, first, second); }
   dismissMessage() { this.message = ""; this.messageTicks = 0; this.messageKind = ""; if (!this.queue.length) this.actionSentence = ""; }
   clearSelection() { this.activeVerb = null; this.firstObject = null; }
   bounds(entity) { const spec = this.graphics[`graphic.${entity.graphic}`], size = tuple(entity.size || `${spec.width},${spec.height}`, 2, entity.id), origin = entity.origin ? tuple(entity.origin, 2, `${entity.id}.origin`) : [size[0] / 2, size[1] / 2]; return [entity.position[0] - origin[0], entity.position[1] - origin[1], ...size]; }
@@ -124,9 +127,9 @@ class Runtime {
     this.textRegion(this.ui.message_region, this.messageKind === "narrate" ? this.message : "");
     if (this.messageKind === "say") this.speech(this.entities.player, this.message);
     const hoverSentence = this.hoverTarget ? (this.activeVerb ? this.verbSentence(this.activeVerb, this.firstObject || this.hoverTarget, this.firstObject ? this.hoverTarget : null) : `Walk to ${this.label(this.hoverTarget)}`) : "";
-    const composing = this.activeVerb ? [title(this.activeVerb), this.firstObject && this.label(this.firstObject), this.firstObject && this.ui[`verb.${this.activeVerb}`]?.preposition].filter(Boolean).join(" ") : "";
+    const composing = this.activeVerb ? [title(this.activeVerb), this.firstObject && this.label(this.firstObject), this.firstObject && this.ui[`verb.${this.activeVerb}`]?.object_preposition].filter(Boolean).join(" ") : "";
     const walking = this.queue[0]?.op === "walk" ? `Walk to ${this.label(this.queue[0].target)}` : "";
-    this.textRegion(this.ui.sentence_region, walking || this.actionSentence || hoverSentence || composing);
+    this.textRegion(this.ui.sentence_region, this.actionSentence || walking || hoverSentence || composing);
     for (const verb of list(this.ui.verb_panel.verbs)) { const spec = this.ui[`verb.${verb}`]; this.panel(spec.rect, spec.label, this.activeVerb === verb); }
   }
   label(id) { return this.entities[id]?.label || this.inventoryEntities[id]?.label || id?.replaceAll("_", " ") || ""; }

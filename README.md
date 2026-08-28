@@ -39,10 +39,13 @@ the current walk. Entity `position` values denote configurable sprite origins
 knees. Taking and using objects also play directional one-shot animations.
 
 Verb sentence prepositions are package data (`preposition = at` makes the
-**Look** action read “Look at …”). **Use** waits for a target when an inventory
-item is selected, omits that item from the available targets, and displays the
-two objects without a preposition. Room entities dispatch `entity.use`, while
-an inventory item and its target dispatch `entity.use_item`. Dialogue can
+**Look** action read “Look at …”, while `object_preposition = on` produces
+“Use key on door”). **Use** accepts a room or inventory object first, waits for
+a distinct target, and omits the first object from the available targets. A
+ground item transaction can walk to and take that item before approaching its
+target; an already inventoried item skips those obsolete steps. The complete
+transaction is rejected before movement if any step is invalid. Two-object use
+dispatches `entity.use_item`. Dialogue can
 contain any number of consecutive `say` or
 `narrate` commands; each is displayed in order, with its duration calculated
 from the configurable base, per-character, and minimum tick values in
