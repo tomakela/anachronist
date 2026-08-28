@@ -71,12 +71,12 @@ test("explicit base64 resources load without requesting a binary PNG first", asy
   assert.equal(result.actor, "bitmap");
 });
 
-test("the demo graphic catalogue contains only base64-encoded bitmaps", async () => {
+test("the demo graphic catalogue requests images before using base64 fallbacks", async () => {
   const graphics = parseIni(await readFile(new URL("../game/resources/graphics.ini", import.meta.url), "utf8"));
   for (const [section, spec] of Object.entries(graphics)) {
     assert.match(section, /^graphic\./);
-    assert.match(spec.path, /\.png\.base64$/);
-    assert.equal(spec.encoding, "base64");
+    assert.match(spec.path, /\.png$/);
+    assert.notEqual(spec.encoding, "base64");
     assert.equal(spec.mime_type, "image/png");
   }
 });

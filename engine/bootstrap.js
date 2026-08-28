@@ -75,13 +75,14 @@ class Runtime {
       if (selectedVerb && !this.queue.some(({ op }) => op === "say" || op === "narrate")) { this.activeVerb = selectedVerb; this.firstObject = null; }
       return;
     }
-    if (selectedVerb) { this.activeVerb = selectedVerb; this.firstObject = null; return; }
+    if (selectedVerb) { this.stopWalking(); this.activeVerb = selectedVerb; this.firstObject = null; return; }
     const target = this.targetAt(x, y);
     if (event.button === 2) { this.perform("look", target); return; }
     if (event.button !== 0) return;
     if (!this.activeVerb) {
       this.interruptCommands(); this.actionSentence = target ? `Walk to ${this.label(target)}` : "Walk to";
-      if (!target || !this.dispatch("entity.walk", [target])) this.queue = [{ op: "walk", actor: "player", point: [Math.round(x), Math.round(y)], manual: true }];
+      if (!target) this.queue = [{ op: "walk", actor: "player", point: [Math.round(x), Math.round(y)], manual: true }];
+      else if (!this.dispatch("entity.walk", [target])) this.queue = [{ op: "walk", actor: "player", target, manual: true }];
       return;
     }
     if (this.activeVerb === "use") {
@@ -96,6 +97,14 @@ class Runtime {
     this.clearSelection();
   }
   interruptCommands() { this.queue = []; const player = this.entities.player; if (player) { player.moving = false; player.action = null; player.actionTicks = 0; } }
+  stopWalking() {
+    const command = this.queue[0];
+    if (command?.op !== "walk") return;
+    this.queue = [];
+    const actor = this.entities[command.actor];
+    if (actor) actor.moving = false;
+    this.actionSentence = "";
+  }
   targetAt(x, y) {
     const origin = tuple(this.ui.inventory_panel.origin, 2, "inventory"), itemWidth = integer(this.ui.inventory_panel.item_width, "item width"), itemHeight = integer(this.ui.inventory_panel.item_height, "item height");
     return this.inventory.find((id, i) => id !== this.firstObject && inside(x, y, [origin[0] + i * itemWidth, origin[1], itemWidth, itemHeight])) || Object.values(this.entities).reverse().find((entity) => entity.id !== "player" && entity.id !== this.firstObject && entity.visible !== "false" && inside(x, y, this.bounds(entity)))?.id;
@@ -111,7 +120,7 @@ class Runtime {
     const player = this.entities.player;
     if (player?.actionTicks > 0) { if (--player.actionTicks === 0) player.action = null; return; }
     const command = this.queue[0]; if (!command) { this.actionSentence = ""; return; }
-    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const dx = target[0] - actor.position[0], dy = target[1] - actor.position[1], distance = Math.hypot(dx, dy); actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); actor.moving = distance > 1.5; if (distance <= 1.5) { actor.position = [...target]; actor.moving = false; this.queue.shift(); } else actor.position = [actor.position[0] + dx / distance * 1.5, actor.position[1] + dy / distance * 1.5]; if (actor.id === "player") this.updateTriggers(actor.position); return; }
+    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const speed = 2, dx = target[0] - actor.position[0], dy = target[1] - actor.position[1], distance = Math.hypot(dx, dy); actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); actor.moving = distance > speed; if (distance <= speed) { actor.position = [...target]; actor.moving = false; this.queue.shift(); } else actor.position = [actor.position[0] + dx / distance * speed, actor.position[1] + dy / distance * speed]; if (actor.id === "player") this.updateTriggers(actor.position); return; }
     this.queue.shift();
     if (command.op === "enter") this.enter(command.room, command.spawn);
     else if (command.op === "say" || command.op === "narrate") { this.message = command.value; this.messageKind = command.op; this.messageTicks = textDuration(command.value, this.game.runtime); }
