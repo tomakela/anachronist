@@ -1,23 +1,11 @@
 import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate } from "./script.js";
 import { resolvePackagePath } from "./path.js";
+import { loadBitmaps } from "./bitmaps.js";
 
 const root = document.querySelector("#engine-host");
 const entry = document.querySelector('meta[name="game-entry"]')?.content;
 const fetchText = async (path) => { const response = await fetch(path); if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`); return response.text(); };
-
-async function loadBitmaps(catalogue, base) {
-  const bitmaps = Object.create(null);
-  await Promise.all(Object.entries(catalogue).filter(([section]) => section.startsWith("graphic.")).map(async ([section, spec]) => {
-    const response = await fetch(resolvePackagePath(base, spec.path));
-    if (!response.ok) { if (spec.optional === "true") return; throw new Error(`${spec.path}: HTTP ${response.status}`); }
-    const source = spec.encoding === "base64"
-      ? await fetch(`data:${spec.mime_type};base64,${(await response.text()).replace(/\s/g, "")}`).then((encoded) => encoded.blob())
-      : await response.blob();
-    bitmaps[section.slice(8)] = await createImageBitmap(source);
-  }));
-  return bitmaps;
-}
 
 async function boot() {
   const game = parseIni(await fetchText(entry), entry);
@@ -41,9 +29,11 @@ class Runtime {
   constructor(game, ui, rooms, graphics, animations, bitmaps, handlers) {
     Object.assign(this, { game, ui, rooms, graphics, animations, bitmaps, handlers });
     this.entities = Object.create(null); this.inventory = []; this.inventoryEntities = Object.create(null);
-    this.activeVerb = null; this.firstObject = null; this.queue = []; this.message = ""; this.messageTicks = 0; this.sentence = ""; this.tick = 0;
+    this.activeVerb = null; this.firstObject = null; this.queue = []; this.message = ""; this.messageKind = ""; this.messageTicks = 0; this.sentence = ""; this.tick = 0;
     this.width = integer(game.display.logical_width, "logical_width"); this.height = integer(game.display.logical_height, "logical_height");
     this.canvas = document.createElement("canvas"); this.canvas.width = this.width; this.canvas.height = this.height;
+    const aspect = this.width / this.height;
+    this.canvas.style.aspectRatio = `${this.width} / ${this.height}`; this.canvas.style.setProperty("--game-width", `min(100vw, ${aspect * 100}vh)`); this.canvas.style.setProperty("--game-height", `min(100vh, ${100 / aspect}vw)`);
     this.canvas.setAttribute("aria-label", ui.interface.accessible_label); this.canvas.tabIndex = 0; this.ctx = this.canvas.getContext("2d"); this.ctx.imageSmoothingEnabled = false;
     root.replaceChildren(this.canvas); root.ariaBusy = "false";
   }
@@ -62,6 +52,7 @@ class Runtime {
   }
   pointer(event) {
     event.preventDefault();
+    if (event.button === 2) this.clearSelection();
     if (this.message) { this.dismissMessage(); return; }
     const rect = this.canvas.getBoundingClientRect(), x = (event.clientX - rect.left) * this.width / rect.width, y = (event.clientY - rect.top) * this.height / rect.height;
     if (event.button === 0) for (const verb of list(this.ui.verb_panel.verbs)) { const box = tuple(this.ui[`verb.${verb}`].rect, 4, verb); if (inside(x, y, box)) { this.activeVerb = verb; this.firstObject = null; return; } }
@@ -80,7 +71,7 @@ class Runtime {
     return this.inventory.find((id, i) => inside(x, y, [origin[0] + i * itemWidth, origin[1], itemWidth, itemHeight])) || Object.values(this.entities).reverse().find((entity) => entity.id !== "player" && entity.visible !== "false" && inside(x, y, this.bounds(entity)))?.id;
   }
   perform(verb, target) { if (!target) return; this.sentence = `${title(verb)} ${this.label(target)}`; this.dispatch(`entity.${verb}`, [target]); }
-  dismissMessage() { this.message = ""; this.messageTicks = 0; }
+  dismissMessage() { this.message = ""; this.messageTicks = 0; this.messageKind = ""; this.sentence = ""; }
   clearSelection() { this.activeVerb = null; this.firstObject = null; }
   bounds(entity) { const spec = this.graphics[`graphic.${entity.graphic}`], size = tuple(entity.size || `${spec.width},${spec.height}`, 2, entity.id); return [entity.position[0], entity.position[1], ...size]; }
   step() {
@@ -90,7 +81,7 @@ class Runtime {
     if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const dx = target[0] - actor.position[0], dy = target[1] - actor.position[1], distance = Math.hypot(dx, dy); actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); actor.moving = distance > 1.5; if (distance <= 1.5) { actor.position = [...target]; actor.moving = false; this.queue.shift(); } else actor.position = [actor.position[0] + dx / distance * 1.5, actor.position[1] + dy / distance * 1.5]; return; }
     this.queue.shift();
     if (command.op === "enter") this.enter(command.room, command.spawn);
-    else if (command.op === "say" || command.op === "narrate") { this.message = command.value; this.messageTicks = integer(this.game.runtime.text_duration_ticks, "text duration"); }
+    else if (command.op === "say" || command.op === "narrate") { this.message = command.value; this.messageKind = command.op; this.messageTicks = integer(this.game.runtime.text_duration_ticks, "text duration"); }
     else if (command.op === "take") { const entity = this.entities[command.target]; if (entity && !this.inventory.includes(command.target)) { entity.visible = "false"; this.inventoryEntities[command.target] = { ...entity }; this.inventory.push(command.target); } }
     else if (command.op === "hide" || command.op === "show") this.entities[command.target].visible = command.op === "show" ? "true" : "false";
     else if (command.op === "set") { const [id, field] = command.target.split("."); if (id === "game") this[id] ??= {}, this[id][field] = command.value; else this.entities[id][field] = String(command.value); }
@@ -104,8 +95,9 @@ class Runtime {
     if (room) for (const entity of Object.values(this.entities)) if (entity.visible !== "false") this.sprite(entity);
     const origin = tuple(this.ui.inventory_panel.origin, 2, "inventory"), itemWidth = integer(this.ui.inventory_panel.item_width, "item width");
     for (const [i, id] of this.inventory.entries()) this.sprite({ ...this.inventoryEntities[id], visible: "true", position: [origin[0] + i * itemWidth, origin[1]], size: `${itemWidth},${this.ui.inventory_panel.item_height}` });
-    this.textRegion(this.ui.message_region, this.message);
-    const composing = this.activeVerb ? [title(this.activeVerb), this.firstObject && this.label(this.firstObject), this.activeVerb === "use" && this.firstObject && "on"].filter(Boolean).join(" ") : ""; this.textRegion(this.ui.sentence_region, this.queue.length ? this.sentence : composing);
+    this.textRegion(this.ui.message_region, this.messageKind === "narrate" ? this.message : "");
+    if (this.messageKind === "say") this.speech(this.entities.player, this.message);
+    const composing = this.activeVerb ? [title(this.activeVerb), this.firstObject && this.label(this.firstObject), this.activeVerb === "use" && this.firstObject && "on"].filter(Boolean).join(" ") : ""; this.textRegion(this.ui.sentence_region, (this.queue.length || this.message) && this.sentence ? this.sentence : composing);
     for (const verb of list(this.ui.verb_panel.verbs)) { const spec = this.ui[`verb.${verb}`]; this.panel(spec.rect, spec.label, this.activeVerb === verb); }
   }
   label(id) { return this.entities[id]?.label || this.inventoryEntities[id]?.label || id?.replaceAll("_", " ") || ""; }
@@ -115,6 +107,16 @@ class Runtime {
     this.ctx.fillStyle = this.graphics[`graphic.${entity.graphic}`]?.missing_color || "#ff00ff"; this.ctx.fillRect(Math.round(x), Math.round(y), w, h);
   }
   textRegion(spec, text) { const [x, y, w, h] = tuple(spec.rect, 4, "text region"), padding = integer(spec.padding || "4", "text padding"); this.ctx.fillStyle = this.ui.palette.panel; this.ctx.fillRect(x, y, w, h); this.ctx.fillStyle = this.ui.palette.text; this.ctx.font = this.ui.interface.font; this.ctx.textAlign = "left"; this.ctx.textBaseline = "middle"; this.ctx.fillText(text || "", x + padding, y + h / 2, w - padding * 2); }
+  speech(actor, text) {
+    if (!actor || !text) return;
+    const spec = this.ui.speech || {}, padding = integer(spec.padding || "3", "speech padding"), margin = integer(spec.screen_margin || "2", "speech margin"), gap = integer(spec.actor_gap || "3", "speech actor gap");
+    this.ctx.font = this.ui.interface.font;
+    const width = Math.min(this.width - margin * 2, Math.ceil(this.ctx.measureText(text).width) + padding * 2), height = integer(spec.height || "14", "speech height");
+    const actorBounds = this.bounds(actor), center = actorBounds[0] + actorBounds[2] / 2;
+    const x = Math.max(margin, Math.min(this.width - margin - width, Math.round(center - width / 2))), y = Math.max(margin, Math.round(actorBounds[1] - gap - height));
+    this.ctx.fillStyle = spec.background || this.ui.palette.panel; this.ctx.fillRect(x, y, width, height);
+    this.ctx.fillStyle = spec.text || this.ui.palette.text; this.ctx.textAlign = "center"; this.ctx.textBaseline = "middle"; this.ctx.fillText(text, x + width / 2, y + height / 2, width - padding * 2);
+  }
   panel(rect, label, active) { const [x, y, w, h] = tuple(rect, 4, "panel"); this.ctx.fillStyle = active ? this.ui.palette.active : this.ui.palette.panel; this.ctx.fillRect(x, y, w, h); this.ctx.strokeStyle = this.ui.palette.border; this.ctx.strokeRect(x + .5, y + .5, w - 1, h - 1); this.ctx.strokeStyle = this.ui.palette.shadow; this.ctx.beginPath(); this.ctx.moveTo(x + 2, y + h - 2); this.ctx.lineTo(x + w - 2, y + h - 2); this.ctx.lineTo(x + w - 2, y + 2); this.ctx.stroke(); this.ctx.fillStyle = this.ui.palette.text; this.ctx.font = this.ui.interface.font; this.ctx.textAlign = "left"; this.ctx.textBaseline = "middle"; this.ctx.fillText(label, x + 5, y + h / 2); }
 }
 const inside = (x, y, [bx, by, bw, bh]) => x >= bx && y >= by && x < bx + bw && y < by + bh;
