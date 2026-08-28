@@ -24,8 +24,12 @@ no room, object, asset, resolution, palette, or interaction constants.
 
 Serve the repository over HTTP (for example, `python3 -m http.server 8000`) and
 open `http://localhost:8000`. The JavaScript host parses package INI files and
-Anachronist Script, renders only VM draw primitives on one canvas, and runs a
-two-room key-and-door demo. All visible dimensions, colors, labels, and object
-placements come from files below `game/`; absent images become the declared
-colored rectangles. Select **Use**, the key, and the door to exercise an atomic
-scripted `walk → take → walk → unlock → room change` command chain.
+Anachronist Script, renders the configured bitmap catalogue on one full-screen
+pixel-scaled canvas, and runs a two-room key-and-door demo. All visible
+dimensions, colors, labels, timings, animations, and object placements come from
+files below `game/`. Bitmap placeholders are stored as text-encoded assets so the
+complete game package remains portable through text-only source systems. Select
+**Use**, the key, and the door to exercise an atomic
+scripted `walk → take → walk → unlock → room change` command chain. A new
+left-click destination redirects free walking immediately, right-click defaults
+to **Look**, and either button advances displayed dialogue.
