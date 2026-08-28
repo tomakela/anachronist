@@ -92,8 +92,9 @@ commands.
 The standard event families are:
 
 - lifecycle: `game.start`, `game.resume`, `room.enter`, `room.exit`;
-- interaction: `entity.look`, `entity.use`, `entity.talk`,
-  `entity.use_item`, and game-defined verb events;
+- interaction: `entity.look`, `entity.use`, `entity.take`, `entity.open`,
+  `entity.close`, `entity.talk`, `entity.use_item`, the default `walk` action,
+  and game-defined verb events;
 - input actions: `action.press`, `action.release`, and `action.change`;
 - movement/visual: `movement.done`, `animation.done`;
 - conversation: `dialogue.choice`, `dialogue.done`;

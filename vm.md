@@ -58,7 +58,7 @@ defaults belong to the versioned specification, never to a host implementation.
 
 | Section | Required information |
 | --- | --- |
-| `package` | package ID, package format version, start script, resource and room catalogues |
+| `package` | package ID, package format version, start script, resource and room catalogues, graphics metadata, and interface declaration |
 | `display` | logical width/height, bit depth, scaling filter, aspect policy, orientation policy |
 | `runtime` | VM tick rate, language, deterministic random seed policy |
 | `input` | action names and bindings or the path to a binding map |
@@ -75,6 +75,42 @@ Configuration is loaded in this order:
 3. load room metadata and compile/validate scripts;
 4. ask the host whether it supports the requested capabilities; and
 5. either start atomically or return all validation errors.
+
+### 3.1 Graphics catalogue
+
+Every bitmap entry in the graphics definition may declare `width` and `height`
+in logical pixels. When either value is absent, that dimension defaults to the
+decoded bitmap dimension; this is the only graphics-size default and is applied
+by the VM after decoding metadata. A declared dimension must be a positive
+integer. Draw commands always carry the resolved dimensions, so a failed image
+load cannot change layout.
+
+An optional graphic may declare a unique `missing_color`. If its bytes cannot be
+loaded or decoded, the VM emits a solid rectangle at every requested draw
+position using the graphic's resolved width, height, transform, and clipping.
+Thus the substitute has exactly the same shape as the missing graphic. Colors
+must be distinct among entries in one catalogue, allowing each missing object to
+be identified visually. Missing required graphics remain fatal errors.
+
+A sprite entry may declare `frames` as an ordered list of source rectangles and
+per-frame durations in VM ticks. Durations are positive integers and may differ
+from frame to frame. The VM advances frames on logical ticks, includes the
+selected source rectangle and resolved destination size in snapshots, and emits
+`animation.done` after the last frame for non-looping animations.
+
+### 3.2 Adventure interface
+
+The package interface declaration defines a lower-left verb panel containing,
+in order, `look`, `use`, `take`, `open`, `close`, and `talk`. The inventory panel
+occupies the region immediately to the right of the verbs. Layout is resolved in
+logical display coordinates and published as part of the scene/focus model, so
+hosts do not recreate or reposition it independently.
+
+Selecting a verb makes it the active interaction until it is consumed, changed,
+or cancelled. When no verb is active, pointer activation in a room dispatches
+the built-in `walk` action. `walk` is therefore the declared default rather than
+a host-side fallback; actionable accessibility nodes expose the same verb and
+inventory ordering.
 
 ## 4. VM data model
 
@@ -93,7 +129,7 @@ with a package-stable ID. Declarative components describe it:
 
 - `transform`: room, position, depth, parent, visibility;
 - `visual`: resource/animation, frame, tint, opacity;
-- `interaction`: verbs, hit shape, priority, enabled state;
+- `interaction`: verbs (including look, use, take, open, close, and talk), hit shape, priority, enabled state;
 - `movement`: walk speed, path, facing, walk-region constraints;
 - `inventory`: icon, quantity, combinations;
 - `audio`: cue and spatial parameters; and

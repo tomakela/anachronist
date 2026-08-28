@@ -15,12 +15,14 @@ to support native hosts later. The design is specified in:
   language; and
 - [`js_engine.md`](js_engine.md) — the HTML5/JavaScript host architecture.
 
-All game-specific values and assets live below [`game/`](game/). The root
+All game-specific values and assets live below [`game/`](game/), including
+graphics dimensions/animation metadata and the verb/inventory interface. The root
 [`index.html`](index.html) is intentionally only a host boot document; it contains
 no room, object, asset, resolution, palette, or interaction constants.
 
 ## Current status
 
 This repository currently contains the architecture and data-layout contract,
-not an engine implementation. Visual layout, controls, and game content can be
-specified in later design steps without changing the VM/host boundary.
+not an engine implementation. The package now specifies graphics fallback and
+sprite timing semantics plus the classic verb/inventory layout without changing
+the VM/host boundary.
