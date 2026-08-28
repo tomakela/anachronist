@@ -32,4 +32,8 @@ complete game package remains portable through text-only source systems. Select
 **Use**, the key, and the door to exercise an atomic
 scripted `walk → take → walk → unlock → room change` command chain. A new
 left-click destination redirects free walking immediately, right-click defaults
-to **Look**, and either button advances displayed dialogue.
+to **Look**, and either button advances displayed dialogue. Hovering an object
+previews the complete command sentence, while starting an interaction interrupts
+the current walk. Entity `position` values denote configurable sprite origins
+(the center by default), letting walk targets line up naturally with feet or
+knees. Taking and using objects also play directional one-shot animations.
