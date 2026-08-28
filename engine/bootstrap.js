@@ -89,7 +89,7 @@ class Runtime {
   interruptCommands() { this.queue = []; const player = this.entities.player; if (player) { player.moving = false; player.action = null; player.actionTicks = 0; } }
   targetAt(x, y) {
     const origin = tuple(this.ui.inventory_panel.origin, 2, "inventory"), itemWidth = integer(this.ui.inventory_panel.item_width, "item width"), itemHeight = integer(this.ui.inventory_panel.item_height, "item height");
-    return this.inventory.find((id, i) => inside(x, y, [origin[0] + i * itemWidth, origin[1], itemWidth, itemHeight])) || Object.values(this.entities).reverse().find((entity) => entity.id !== "player" && entity.visible !== "false" && inside(x, y, this.bounds(entity)))?.id;
+    return this.inventory.find((id, i) => id !== this.firstObject && inside(x, y, [origin[0] + i * itemWidth, origin[1], itemWidth, itemHeight])) || Object.values(this.entities).reverse().find((entity) => entity.id !== "player" && entity.id !== this.firstObject && entity.visible !== "false" && inside(x, y, this.bounds(entity)))?.id;
   }
   perform(verb, target) { if (!target) return; this.interruptCommands(); this.actionSentence = this.verbSentence(verb, target); if (verb === "use") this.queue.push({ op: "animate", actor: "player", animation: "use" }); this.dispatch(`entity.${verb}`, [target]); }
   verbSentence(verb, first, second) { const preposition = this.ui[`verb.${verb}`]?.preposition; return [title(verb), second ? this.label(first) : preposition, second ? preposition : null, this.label(second || first)].filter(Boolean).join(" "); }

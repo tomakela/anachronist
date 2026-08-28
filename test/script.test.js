@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
@@ -56,4 +57,10 @@ test("dialogue duration is configured from character count", () => {
   const runtime = { text_base_ticks: "30", text_ticks_per_character: "4", text_minimum_ticks: "90" };
   assert.equal(textDuration("short", runtime), 90);
   assert.equal(textDuration("a sufficiently long sentence", runtime), 142);
+});
+
+test("the configured verb sentences use only the intended prepositions", async () => {
+  const ui = parseIni(await readFile(new URL("../game/interface.ini", import.meta.url), "utf8"));
+  assert.equal(ui["verb.look"].preposition, "at");
+  assert.equal(ui["verb.use"].preposition, undefined);
 });
