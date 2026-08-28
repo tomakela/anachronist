@@ -2,7 +2,7 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { loadBitmaps } from "./bitmaps.js";
-import { enteredTriggers, prepareItemUse, verbSentence } from "./interaction.js";
+import { enteredTriggers, prepareItemUse, retainedRoomEntities, verbSentence } from "./interaction.js";
 
 const root = document.querySelector("#engine-host");
 const entry = document.querySelector('meta[name="game-entry"]')?.content;
@@ -29,7 +29,7 @@ async function boot() {
 class Runtime {
   constructor(game, ui, rooms, graphics, animations, bitmaps, handlers) {
     Object.assign(this, { game, ui, rooms, graphics, animations, bitmaps, handlers });
-    this.entities = Object.create(null); this.inventory = []; this.inventoryEntities = Object.create(null); this.globals = Object.create(null);
+    this.entities = Object.create(null); this.roomEntities = Object.create(null); this.inventory = []; this.inventoryEntities = Object.create(null); this.globals = Object.create(null);
     this.activeVerb = null; this.firstObject = null; this.hoverTarget = null; this.queue = []; this.message = ""; this.messageKind = ""; this.messageTicks = 0; this.actionSentence = ""; this.tick = 0;
     this.width = integer(game.display.logical_width, "logical_width"); this.height = integer(game.display.logical_height, "logical_height");
     this.canvas = document.createElement("canvas"); this.canvas.width = this.width; this.canvas.height = this.height;
@@ -51,8 +51,12 @@ class Runtime {
   dispatch(event, args) { const handler = this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length); if (!handler) return 0; const commands = instantiate(handler, args, this.scriptState()); this.queue.push(...commands); return commands.length; }
   commands(event, args) { const handler = this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length); return handler ? instantiate(handler, args, this.scriptState()) : null; }
   enter(id, spawn) {
-    const room = this.rooms[id]; if (!room) throw new Error(`Unknown room ${id}`); this.room = id; this.entities = Object.create(null);
-    for (const [section, values] of Object.entries(room)) if (section.startsWith("entity.")) this.entities[section.slice(7)] = { id: section.slice(7), ...values, position: tuple(values.position, 2, `${section}.position`) };
+    const room = this.rooms[id]; if (!room) throw new Error(`Unknown room ${id}`); this.room = id;
+    this.entities = retainedRoomEntities(this.roomEntities, id, () => {
+      const entities = Object.create(null);
+      for (const [section, values] of Object.entries(room)) if (section.startsWith("entity.")) entities[section.slice(7)] = { id: section.slice(7), ...values, position: tuple(values.position, 2, `${section}.position`) };
+      return entities;
+    });
     const point = tuple(room[`spawn.${spawn}`].position, 2, "spawn"), player = this.animations.player || {}; this.entities.player = { id: "player", position: point, graphic: player.graphic || "placeholder.actor", size: player.size || "16,32", origin: player.origin, label: "player", visible: "true", facing: "down", moving: false, action: null, actionTicks: 0 };
     this.triggers = Object.fromEntries(Object.entries(room).filter(([section]) => section.startsWith("trigger.")).map(([section, values]) => [section.slice(8), tuple(values.rect, 4, `${section}.rect`)]));
     // A spawn may deliberately overlap a destination trigger. Treat it as

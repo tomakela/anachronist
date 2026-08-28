@@ -5,7 +5,7 @@ import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { loadBitmaps } from "../engine/bitmaps.js";
-import { enteredTriggers, prepareItemUse, verbSentence } from "../engine/interaction.js";
+import { enteredTriggers, prepareItemUse, retainedRoomEntities, verbSentence } from "../engine/interaction.js";
 
 test("a handler is fully expanded into an ordered command chain", () => {
   const [handler] = compile(`module demo; on entity.use_item(item, target) {
@@ -151,4 +151,25 @@ test("triggers fire only when crossing into their region", () => {
 test("a spawn inside a trigger can be initialized as already occupied", () => {
   const initial = enteredTriggers([15, 15], { return: [10, 10, 20, 20] }).occupied;
   assert.deepEqual(enteredTriggers([15, 15], { return: [10, 10, 20, 20] }, initial).entered, []);
+});
+
+test("room entity mutations survive leaving and returning", () => {
+  const states = Object.create(null);
+  const hall = retainedRoomEntities(states, "hall", () => ({ clock: { visible: "true" } }));
+  hall.clock.visible = "false";
+  const returned = retainedRoomEntities(states, "hall", () => ({ clock: { visible: "true" } }));
+  assert.equal(returned, hall);
+  assert.equal(returned.clock.visible, "false");
+});
+
+test("the demo door can close, reopen, and be walked through", async () => {
+  const handlers = compile(await readFile(new URL("../game/scripts/main.ana", import.meta.url), "utf8"));
+  const handler = (event) => handlers.find((candidate) => candidate.event === event);
+  assert.deepEqual(instantiate(handler("entity.close"), ["door"], { game: { door_open: true } }).map(({ op, target }) => [op, target]), [
+    ["walk", "door"], ["set", "door.open"], ["set", "door.graphic"], ["set", "game.door_open"]
+  ]);
+  assert.deepEqual(instantiate(handler("entity.open"), ["door"], { game: { door_unlocked: true } }).map(({ op, target }) => [op, target]), [
+    ["walk", "door"], ["set", "door.open"], ["set", "door.graphic"], ["set", "game.door_open"]
+  ]);
+  assert.deepEqual(instantiate(handler("entity.walk"), ["door"], { game: {} }).map(({ op, target }) => [op, target]), [["walk", "door"]]);
 });
