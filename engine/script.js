@@ -70,3 +70,11 @@ export function instantiate(handler, supplied) {
   expand(handler.body);
   return commands;
 }
+
+/** Return the configured display time for one item in a dialogue sequence. */
+export function textDuration(text, runtime) {
+  if (!runtime.text_ticks_per_character) return Number(runtime.text_duration_ticks);
+  const base = Number(runtime.text_base_ticks || 0), perCharacter = Number(runtime.text_ticks_per_character), minimum = Number(runtime.text_minimum_ticks || 1);
+  for (const [name, value] of [["text_base_ticks", base], ["text_ticks_per_character", perCharacter], ["text_minimum_ticks", minimum]]) if (!Number.isInteger(value)) throw new Error(`${name}: expected integer`);
+  return Math.max(minimum, base + String(text).length * perCharacter);
+}
