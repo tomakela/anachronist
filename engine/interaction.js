@@ -63,6 +63,11 @@ export function enteredTriggers(point, triggers, occupied = new Set()) {
   return { occupied: next, entered };
 }
 
+/** Create a room's entities once, then retain that mutable state across visits. */
+export function retainedRoomEntities(states, room, create) {
+  return states[room] || (states[room] = create());
+}
+
 const pointInside = ([x, y], [bx, by, bw, bh]) => x >= bx && y >= by && x < bx + bw && y < by + bh;
 
 const title = (value) => value[0].toUpperCase() + value.slice(1);

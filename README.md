@@ -37,14 +37,16 @@ previews the complete command sentence, while starting an interaction interrupts
 the current walk. Entity `position` values denote configurable sprite origins
 (the center by default), letting walk targets line up naturally with feet or
 knees. Taking and using objects also play directional one-shot animations.
-The script records key acquisition in the persistent `game.key_taken` global
-and checks it when the hall is reconstructed, so returning through the gate
-cannot recreate the collected key unless game logic explicitly shows it again.
+Each room's mutable entity state is retained between visits, so a taken object
+cannot reappear at its old room position when the player returns. The demo also
+records key acquisition in the persistent `game.key_taken` global for its game
+logic.
 Rooms may also declare rectangular `[trigger.name]` regions. Crossing into one
 dispatches `trigger.enter(name)`; a player spawned inside a region must leave it
 before that region can fire, preventing immediate room-transition loops. The
-demo's unlocked door uses this mechanism and swaps to an open-door graphic so
-the player can walk through it into the garden.
+demo's unlocked door uses this mechanism, can be opened and closed, and swaps
+graphics with its state. Walking to the open door crosses its trigger and enters
+the garden.
 
 Verb sentence prepositions are package data (`preposition = at` makes the
 **Look** action read “Look at …”, while `object_preposition = on` produces

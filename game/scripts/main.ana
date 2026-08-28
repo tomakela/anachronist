@@ -3,6 +3,7 @@ module game.main;
 on game.start() {
     set game.key_taken = false;
     set game.door_open = false;
+    set game.door_unlocked = false;
     enter room hall at entry;
     narrate "Find a way into the garden.";
 }
@@ -13,11 +14,15 @@ on entity.look(target) {
 }
 
 on entity.walk(target) {
-    if (target == gate) {
-        walk player to gate;
-        enter room hall at garden;
-        if (game.key_taken == true) {
-            hide key;
+    if (target == door) {
+        walk player to door;
+    } else {
+        if (target == gate) {
+            walk player to gate;
+            enter room hall at garden;
+            if (game.key_taken == true) {
+                hide key;
+            }
         }
     }
 }
@@ -61,6 +66,7 @@ on entity.use_item(item, target) {
                 set door.open = true;
                 set door.graphic = placeholder.door_open;
                 set game.door_open = true;
+                set game.door_unlocked = true;
                 say "The key turns in the lock.";
             }
         } else {
@@ -72,11 +78,31 @@ on entity.use_item(item, target) {
 }
 
 on entity.open(target) {
-    say "It is locked.";
+    if (target == door) {
+        if (game.door_unlocked == true) {
+            walk player to door;
+            set door.open = true;
+            set door.graphic = placeholder.door_open;
+            set game.door_open = true;
+        } else {
+            say "It is locked.";
+        }
+    } else {
+        say "I can't open that.";
+    }
 }
 
 on entity.close(target) {
-    say "I can't do that.";
+    if (target == door) {
+        if (game.door_open == true) {
+            walk player to door;
+            set door.open = false;
+            set door.graphic = placeholder.door;
+            set game.door_open = false;
+        }
+    } else {
+        say "I can't close that.";
+    }
 }
 
 on entity.use(target) {
