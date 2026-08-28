@@ -53,6 +53,34 @@ test("PNG resources fall back to text-encoded PNG resources", async () => {
   assert.equal(result.actor, "bitmap");
 });
 
+test("explicit base64 resources load without requesting a binary PNG first", async () => {
+  const requested = [];
+  const fetcher = async (path) => {
+    requested.push(path);
+    if (path === "game/images/actor.png.base64") return new Response("aGVsbG8=");
+    return fetch(path);
+  };
+  const result = await loadBitmaps({
+    "graphic.actor": { path: "images/actor.png.base64", encoding: "base64", mime_type: "image/png" }
+  }, "game/", fetcher, async (blob) => {
+    assert.equal(await blob.text(), "hello");
+    return "bitmap";
+  });
+  assert.equal(requested[0], "game/images/actor.png.base64");
+  assert.equal(requested.some((path) => path === "game/images/actor.png"), false);
+  assert.equal(result.actor, "bitmap");
+});
+
+test("the demo graphic catalogue contains only base64-encoded bitmaps", async () => {
+  const graphics = parseIni(await readFile(new URL("../game/resources/graphics.ini", import.meta.url), "utf8"));
+  for (const [section, spec] of Object.entries(graphics)) {
+    assert.match(section, /^graphic\./);
+    assert.match(spec.path, /\.png\.base64$/);
+    assert.equal(spec.encoding, "base64");
+    assert.equal(spec.mime_type, "image/png");
+  }
+});
+
 test("using the key on a non-door does not enqueue a walk", () => {
   const source = `on entity.use_item(item, target) {
     if (target == door) { if (item == key) { walk player to door; } else { say "No"; } }
