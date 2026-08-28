@@ -1,0 +1,5 @@
+module game.main;
+
+// The initial room will be selected after the room design is supplied.
+on game.start() {
+}
