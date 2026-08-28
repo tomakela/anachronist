@@ -20,9 +20,12 @@ graphics dimensions/animation metadata and the verb/inventory interface. The roo
 [`index.html`](index.html) is intentionally only a host boot document; it contains
 no room, object, asset, resolution, palette, or interaction constants.
 
-## Current status
+## Running the demo
 
-This repository currently contains the architecture and data-layout contract,
-not an engine implementation. The package now specifies graphics fallback and
-sprite timing semantics plus the classic verb/inventory layout without changing
-the VM/host boundary.
+Serve the repository over HTTP (for example, `python3 -m http.server 8000`) and
+open `http://localhost:8000`. The JavaScript host parses package INI files and
+Anachronist Script, renders only VM draw primitives on one canvas, and runs a
+two-room key-and-door demo. All visible dimensions, colors, labels, and object
+placements come from files below `game/`; absent images become the declared
+colored rectangles. Select **Use**, the key, and the door to exercise an atomic
+scripted `walk → take → walk → unlock → room change` command chain.

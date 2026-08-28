@@ -1,5 +1,50 @@
 module game.main;
 
-// The initial room will be selected after the room design is supplied.
 on game.start() {
+    enter room hall at entry;
+    narrate "Find a way into the garden.";
+}
+
+on entity.look(target) {
+    say "That looks interesting.";
+}
+
+on entity.take(target) {
+    walk player to target;
+    take target;
+    say "Taken.";
+}
+
+// Runtime expansion is atomic: none of these commands can start until the
+// parser has accepted and expanded the complete sequence.
+on entity.use_item(item, target) {
+    if (item == key) {
+        sequence {
+            walk player to key;
+            take key;
+            walk player to door;
+            set door.open = true;
+            say "The key turns in the lock.";
+            wait 30 ticks;
+            enter room garden at entry;
+        }
+    } else {
+        say "I can't do that.";
+    }
+}
+
+on entity.open(target) {
+    say "It is locked.";
+}
+
+on entity.close(target) {
+    say "I can't do that.";
+}
+
+on entity.use(target) {
+    say "Use it with what?";
+}
+
+on entity.talk(target) {
+    say "It doesn't answer.";
 }

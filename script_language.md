@@ -177,19 +177,76 @@ reinterpreted. A package may ship precompiled bytecode only if it also declares
 the exact VM ABI and integrity hash; development packages should keep source for
 diagnostics and portability.
 
-## 10. Grammar sketch
+## 10. Normative lexical grammar
+
+The following rules are normative for language version 1. Whitespace separates
+tokens. A line comment begins with `//` and ends immediately before LF or at
+EOF. Identifiers match `[A-Za-z_][A-Za-z0-9_]*`; a qualified identifier is two
+or more identifiers separated by `.`. Reserved words may not be identifiers.
+Strings use double quotes and support `\\`, `\"`, `\n`, `\r`, `\t`, and
+`\u{hex}` escapes. Source code must not contain unpaired Unicode surrogates.
+Integer literals are decimal or `0x` hexadecimal; fixed literals contain a
+decimal point and optional `fixed` suffix. Leading signs are unary operators.
+
+The longest valid token is always selected. Source locations count Unicode
+scalar values, with lines and columns starting at one. A UTF-8 BOM is permitted
+only at the beginning of a module.
+
+## 11. Normative grammar
 
 ```ebnf
-module       = "module", qualified_id, ";", { declaration } ;
-declaration  = import | constant | state | function | event | handler ;
-handler      = "on", event_pattern, [ "when", expression ], block ;
-function     = [ "task" ], "fn", id, "(", parameters, ")",
-               [ "->", type ], block ;
-block        = "{", { statement }, "}" ;
-statement    = let | set | if | match | while | for | command |
-               await | emit | consume | return | expression, ";" ;
+module        = "module", qualified_id, ";", { declaration } ;
+declaration   = import | constant | state | function | event | handler ;
+import        = "import", ("room"|"resource"|"module"), qualified_id, ";" ;
+constant      = "const", id, [ ":", type ], "=", expression, ";" ;
+state         = "state", ("game"|"room"|"entity"), id, "{", { field }, "}" ;
+field         = type, id, [ "=", expression ], ";" ;
+function      = [ "task" ], "fn", id, "(", [ parameters ], ")",
+                [ "->", type ], block ;
+event         = "event", qualified_id, "(", [ parameters ], ")", ";" ;
+handler       = "on", qualified_id, "(", [ arguments ], ")",
+                [ "when", expression ], [ "priority", integer ], block ;
+parameters    = parameter, { ",", parameter } ;
+parameter     = id, ":", type ;
+arguments     = (id | id, ":", type), { ",", (id | id, ":", type) } ;
+type          = primitive | domain | ("list"|"option"), "<", type, ">" |
+                "map", "<", type, ",", type, ">" ;
+block         = "{", { statement }, "}" ;
+statement     = let | set | if | match | while | for | break | continue |
+                return | emit | consume | await | spawn | defer | sequence |
+                command | expression, ";" ;
+sequence      = "sequence", block ;
+let           = "let", id, [ ":", type ], "=", expression, ";" ;
+set           = "set", assignable, "=", expression, ";" ;
+if            = "if", "(", expression, ")", block, [ "else", (block|if) ] ;
+while         = "while", "(", expression, ")", block ;
+for           = "for", id, "in", expression, block ;
+return        = "return", [ expression ], ";" ;
+expression    = coalesce ;
+coalesce      = logical_or, { "??", logical_or } ;
+logical_or    = logical_and, { "||", logical_and } ;
+logical_and   = equality, { "&&", equality } ;
+equality      = comparison, { ("=="|"!="), comparison } ;
+comparison    = term, { ("<"|"<="|">"|">="), term } ;
+term          = factor, { ("+"|"-"), factor } ;
+factor        = unary, { ("*"|"/"|"%"), unary } ;
+unary         = ("!"|"-"), unary | postfix ;
+postfix       = primary, { ".", id | "[", expression, "]" |
+                 "(", [ expression, { ",", expression } ], ")" } ;
+primary       = literal | qualified_id | list | map | "(", expression, ")" ;
 ```
 
-This sketch is intentionally not yet a parser specification. Before
-implementation it must be completed with lexical rules, precedence, full command
-grammar, bytecode opcodes, standard event schemas, and a conformance suite.
+`match`, adventure commands, suspension statements, and collection literals use
+the spellings and operand order specified in sections 4–7. Operators on one row
+above have equal precedence and associate left-to-right; unary and postfix
+operators associate right-to-left and left-to-right respectively.
+
+## 12. Interpreter transaction requirement
+
+An input gesture first resolves a handler and expands its complete `sequence`
+into a validated command list. Only after parsing, reference resolution, guard
+evaluation, and expansion succeed is that list appended to the VM queue. No
+command from a malformed or incomplete chain may execute. Consequently a
+scripted `walk; take; walk; use` interaction cannot begin walking while the
+remainder of that action is still being constructed. `sequence` is not a
+concurrency primitive; it makes this command-planning boundary explicit.
