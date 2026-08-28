@@ -1,20 +1,20 @@
 import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate } from "./script.js";
+import { resolvePackagePath } from "./path.js";
 
 const root = document.querySelector("#engine-host");
 const entry = document.querySelector('meta[name="game-entry"]')?.content;
 const fetchText = async (path) => { const response = await fetch(path); if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`); return response.text(); };
-const relative = (base, path) => new URL(path, new URL(base, location.href)).pathname.replace(/^\//, "");
 
 async function boot() {
   const game = parseIni(await fetchText(entry), entry);
   const base = entry.slice(0, entry.lastIndexOf("/") + 1);
-  const ui = parseIni(await fetchText(relative(base, game.package.interface)), game.package.interface);
-  const roomsIndex = parseIni(await fetchText(relative(base, game.package.room_catalogue)));
-  const graphics = parseIni(await fetchText(relative(base, game.package.graphics)));
-  const script = compile(await fetchText(relative(base, game.package.entry_script)));
+  const ui = parseIni(await fetchText(resolvePackagePath(base, game.package.interface)), game.package.interface);
+  const roomsIndex = parseIni(await fetchText(resolvePackagePath(base, game.package.room_catalogue)));
+  const graphics = parseIni(await fetchText(resolvePackagePath(base, game.package.graphics)));
+  const script = compile(await fetchText(resolvePackagePath(base, game.package.entry_script)));
   const rooms = Object.create(null);
-  for (const id of list(roomsIndex.catalogue.rooms)) rooms[id] = parseIni(await fetchText(relative(base, roomsIndex[`room.${id}`].path)));
+  for (const id of list(roomsIndex.catalogue.rooms)) rooms[id] = parseIni(await fetchText(resolvePackagePath(base, roomsIndex[`room.${id}`].path)));
   new Runtime(game, ui, rooms, graphics, script).start();
 }
 

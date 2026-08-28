@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { compile, instantiate } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
+import { resolvePackagePath } from "../engine/path.js";
 
 test("a handler is fully expanded into an ordered command chain", () => {
   const [handler] = compile(`module demo; on entity.use_item(item, target) {
@@ -16,4 +17,9 @@ test("a handler is fully expanded into an ordered command chain", () => {
 
 test("INI parser rejects duplicate package values", () => {
   assert.throws(() => parseIni("[display]\nwidth=1\nwidth=2"), /duplicate key/);
+});
+
+test("package paths remain relative to the site root", () => {
+  assert.equal(resolvePackagePath("game/", "interface.ini"), "game/interface.ini");
+  assert.equal(resolvePackagePath("game/", "rooms/index.ini"), "game/rooms/index.ini");
 });
