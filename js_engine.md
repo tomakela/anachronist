@@ -26,7 +26,9 @@ compatibility, but must use the identical message protocol.
    model; only then is the loading UI replaced.
 
 Every failure produces a visible, accessible diagnostic and console details.
-Missing game values are not replaced with JavaScript defaults.
+Missing game values are not replaced with JavaScript defaults. The VM-defined
+bitmap-dimension default and missing-graphic rectangles are package semantics,
+not host guesses.
 
 ## 3. Modules
 
@@ -72,6 +74,13 @@ The first renderer may use Canvas 2D. Renderer selection is capability-based;
 WebGL/WebGPU renderers must produce protocol-equivalent output and cannot expose
 their APIs to scripts.
 
+Bitmap and sprite commands include resolved destination dimensions. If the VM
+marks an optional graphic as missing, the renderer draws the supplied solid
+color rectangle through the same transform and clip used by the bitmap. It must
+not inspect a failed URL to choose dimensions or colors. Sprite source frames
+and their tick-based, potentially non-uniform durations are resolved by the VM;
+the host never advances animation from wall-clock time.
+
 ## 5. Desktop and mobile layout
 
 The host root occupies the available visual viewport while respecting safe-area
@@ -93,6 +102,11 @@ Mobile behavior includes:
 Desktop behavior includes mouse buttons, keyboard actions, optional gamepad
 mapping, focus restoration, and context-menu policy. Bindings are declared by
 the package; the host only converts physical input into declared action IDs.
+
+For the supplied interface, the host renders the VM-published verb controls in
+the lower-left and inventory immediately to their right. With no selected verb,
+room clicks arrive as the VM-declared `walk` action. The DOM accessibility mirror
+uses the identical order and active-verb state.
 
 ## 6. Input pipeline
 
@@ -166,8 +180,9 @@ become a second asset manifest.
 
 - protocol contract tests replay the same event fixtures against worker and
   direct transports;
-- golden images verify draw order, palettes, transparency, letterboxing, and
-  nearest-neighbor scaling at integer and fractional viewport sizes;
+- golden images verify draw order, palettes, transparency, letterboxing,
+  same-size missing-graphic rectangles with distinct colors, animated sprite
+  timing, and nearest-neighbor scaling at integer and fractional viewport sizes;
 - coordinate tests round-trip every viewport edge and outside point;
 - browser tests cover mouse, touch, keyboard, cancellation, rotation, resize,
   lost focus, audio blocking, and storage failure;
