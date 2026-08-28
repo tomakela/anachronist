@@ -57,13 +57,23 @@ const evaluate = (expr, context) => expr.kind === "literal" ? expr.value : expr.
 
 // The entire handler is expanded before the first command is returned. This is
 // the transaction boundary that prevents a partially entered command chain.
-export function instantiate(handler, supplied) {
+export function instantiate(handler, supplied, state = Object.create(null)) {
   const context = Object.fromEntries(handler.args.map((name, i) => [name, supplied[i]]));
+  const resolve = (name) => {
+    if (name in context) return context[name];
+    let value = state;
+    for (const part of name.split(".")) {
+      if (value == null || !Object.prototype.hasOwnProperty.call(value, part)) return name;
+      value = value[part];
+    }
+    return value;
+  };
+  const scope = new Proxy(context, { get: (_, key) => resolve(key), has: () => true });
   const commands = [];
   const expand = (body) => body.forEach((node) => {
     if (node.op === "sequence") return expand(node.body);
-    if (node.op === "if") return expand(evaluate(node.test, context) ? node.yes : node.no);
-    const command = { ...node, value: node.value ? evaluate(node.value, context) : undefined };
+    if (node.op === "if") return expand(evaluate(node.test, scope) ? node.yes : node.no);
+    const command = { ...node, value: node.value ? evaluate(node.value, scope) : undefined };
     for (const key of ["actor", "target", "room", "spawn"]) if (command[key] in context) command[key] = context[command[key]];
     commands.push(command);
   });

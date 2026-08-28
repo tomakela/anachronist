@@ -1,6 +1,7 @@
 module game.main;
 
 on game.start() {
+    set game.key_taken = false;
     enter room hall at entry;
     narrate "Find a way into the garden.";
 }
@@ -14,12 +15,18 @@ on entity.walk(target) {
     if (target == gate) {
         walk player to gate;
         enter room hall at garden;
+        if (game.key_taken == true) {
+            hide key;
+        }
     }
 }
 
 on entity.take(target) {
     walk player to target;
     take target;
+    if (target == key) {
+        set game.key_taken = true;
+    }
     say "Taken.";
 }
 
@@ -31,6 +38,7 @@ on entity.use_item(item, target) {
             sequence {
                 walk player to key;
                 take key;
+                set game.key_taken = true;
                 walk player to door;
                 set door.open = true;
                 say "The key turns in the lock.";

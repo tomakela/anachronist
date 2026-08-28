@@ -37,6 +37,9 @@ previews the complete command sentence, while starting an interaction interrupts
 the current walk. Entity `position` values denote configurable sprite origins
 (the center by default), letting walk targets line up naturally with feet or
 knees. Taking and using objects also play directional one-shot animations.
+The script records key acquisition in the persistent `game.key_taken` global
+and checks it when the hall is reconstructed, so returning through the gate
+cannot recreate the collected key unless game logic explicitly shows it again.
 
 Verb sentence prepositions are package data (`preposition = at` makes the
 **Look** action read “Look at …”, while `object_preposition = on` produces
