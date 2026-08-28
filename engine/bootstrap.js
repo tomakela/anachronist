@@ -2,7 +2,7 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { loadBitmaps } from "./bitmaps.js";
-import { prepareItemUse, verbSentence } from "./interaction.js";
+import { enteredTriggers, prepareItemUse, verbSentence } from "./interaction.js";
 
 const root = document.querySelector("#engine-host");
 const entry = document.querySelector('meta[name="game-entry"]')?.content;
@@ -54,6 +54,11 @@ class Runtime {
     const room = this.rooms[id]; if (!room) throw new Error(`Unknown room ${id}`); this.room = id; this.entities = Object.create(null);
     for (const [section, values] of Object.entries(room)) if (section.startsWith("entity.")) this.entities[section.slice(7)] = { id: section.slice(7), ...values, position: tuple(values.position, 2, `${section}.position`) };
     const point = tuple(room[`spawn.${spawn}`].position, 2, "spawn"), player = this.animations.player || {}; this.entities.player = { id: "player", position: point, graphic: player.graphic || "placeholder.actor", size: player.size || "16,32", origin: player.origin, label: "player", visible: "true", facing: "down", moving: false, action: null, actionTicks: 0 };
+    this.triggers = Object.fromEntries(Object.entries(room).filter(([section]) => section.startsWith("trigger.")).map(([section, values]) => [section.slice(8), tuple(values.rect, 4, `${section}.rect`)]));
+    // A spawn may deliberately overlap a destination trigger. Treat it as
+    // occupied until the player leaves, rather than immediately bouncing back.
+    this.occupiedTriggers = enteredTriggers(point, this.triggers).occupied;
+    this.dispatch("room.enter", [id]);
   }
   eventPoint(event) { const rect = this.canvas.getBoundingClientRect(); return [(event.clientX - rect.left) * this.width / rect.width, (event.clientY - rect.top) * this.height / rect.height]; }
   hover(event) { const [x, y] = this.eventPoint(event); this.hoverTarget = this.targetAt(x, y); }
@@ -80,7 +85,7 @@ class Runtime {
       return;
     }
     if (this.activeVerb === "use") {
-      if (!this.firstObject && target) { this.firstObject = target; return; }
+      if (!this.firstObject && target) { this.firstObject = target; this.hoverTarget = null; return; }
       else if (target) {
         this.interruptCommands(); this.actionSentence = this.verbSentence("use", this.firstObject, target);
         const commands = this.commands("entity.use_item", [this.firstObject, target]);
@@ -106,7 +111,7 @@ class Runtime {
     const player = this.entities.player;
     if (player?.actionTicks > 0) { if (--player.actionTicks === 0) player.action = null; return; }
     const command = this.queue[0]; if (!command) { this.actionSentence = ""; return; }
-    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const dx = target[0] - actor.position[0], dy = target[1] - actor.position[1], distance = Math.hypot(dx, dy); actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); actor.moving = distance > 1.5; if (distance <= 1.5) { actor.position = [...target]; actor.moving = false; this.queue.shift(); } else actor.position = [actor.position[0] + dx / distance * 1.5, actor.position[1] + dy / distance * 1.5]; return; }
+    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const dx = target[0] - actor.position[0], dy = target[1] - actor.position[1], distance = Math.hypot(dx, dy); actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); actor.moving = distance > 1.5; if (distance <= 1.5) { actor.position = [...target]; actor.moving = false; this.queue.shift(); } else actor.position = [actor.position[0] + dx / distance * 1.5, actor.position[1] + dy / distance * 1.5]; if (actor.id === "player") this.updateTriggers(actor.position); return; }
     this.queue.shift();
     if (command.op === "enter") this.enter(command.room, command.spawn);
     else if (command.op === "say" || command.op === "narrate") { this.message = command.value; this.messageKind = command.op; this.messageTicks = textDuration(command.value, this.game.runtime); }
@@ -118,6 +123,7 @@ class Runtime {
     else if (command.op === "pause") return;
     else if (command.op === "face") this.entities[command.actor].facing = command.direction;
   }
+  updateTriggers(point) { const state = enteredTriggers(point, this.triggers, this.occupiedTriggers); this.occupiedTriggers = state.occupied; for (const id of state.entered) this.dispatch("trigger.enter", [id]); }
   animationDuration(action, facing) { const animation = this.animations[`animation.${action}_${facing || "down"}`]; if (!animation?.frames) return 1; return animation.frames.split(";").reduce((sum, frame) => sum + tuple(frame.trim(), 5, "animation frame")[4], 0); }
   frame(now) { if (now - this.last >= 1000 / integer(this.game.runtime.ticks_per_second, "tick rate")) { this.step(); this.last = now; } this.draw(); requestAnimationFrame((time) => this.frame(time)); }
   draw() {
@@ -127,7 +133,8 @@ class Runtime {
     for (const [i, id] of this.inventory.entries()) this.sprite({ ...this.inventoryEntities[id], visible: "true", position: [origin[0] + i * itemWidth, origin[1]], origin: "0,0", size: `${itemWidth},${this.ui.inventory_panel.item_height}` });
     this.textRegion(this.ui.message_region, this.messageKind === "narrate" ? this.message : "");
     if (this.messageKind === "say") this.speech(this.entities.player, this.message);
-    const hoverSentence = this.hoverTarget ? (this.activeVerb ? this.verbSentence(this.activeVerb, this.firstObject || this.hoverTarget, this.firstObject ? this.hoverTarget : null) : `Walk to ${this.label(this.hoverTarget)}`) : "";
+    const hoverTarget = this.hoverTarget === this.firstObject ? null : this.hoverTarget;
+    const hoverSentence = hoverTarget ? (this.activeVerb ? this.verbSentence(this.activeVerb, this.firstObject || hoverTarget, this.firstObject ? hoverTarget : null) : `Walk to ${this.label(hoverTarget)}`) : "";
     const composing = this.activeVerb ? [title(this.activeVerb), this.firstObject && this.label(this.firstObject), this.firstObject && this.ui[`verb.${this.activeVerb}`]?.object_preposition].filter(Boolean).join(" ") : "";
     const walking = this.queue[0]?.op === "walk" ? `Walk to ${this.label(this.queue[0].target)}` : "";
     this.textRegion(this.ui.sentence_region, this.actionSentence || walking || hoverSentence || composing);

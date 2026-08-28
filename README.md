@@ -40,6 +40,11 @@ knees. Taking and using objects also play directional one-shot animations.
 The script records key acquisition in the persistent `game.key_taken` global
 and checks it when the hall is reconstructed, so returning through the gate
 cannot recreate the collected key unless game logic explicitly shows it again.
+Rooms may also declare rectangular `[trigger.name]` regions. Crossing into one
+dispatches `trigger.enter(name)`; a player spawned inside a region must leave it
+before that region can fire, preventing immediate room-transition loops. The
+demo's unlocked door uses this mechanism and swaps to an open-door graphic so
+the player can walk through it into the garden.
 
 Verb sentence prepositions are package data (`preposition = at` makes the
 **Look** action read “Look at …”, while `object_preposition = on` produces

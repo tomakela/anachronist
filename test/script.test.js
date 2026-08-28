@@ -5,7 +5,7 @@ import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { loadBitmaps } from "../engine/bitmaps.js";
-import { prepareItemUse, verbSentence } from "../engine/interaction.js";
+import { enteredTriggers, prepareItemUse, verbSentence } from "../engine/interaction.js";
 
 test("a handler is fully expanded into an ordered command chain", () => {
   const [handler] = compile(`module demo; on entity.use_item(item, target) {
@@ -106,4 +106,21 @@ test("an invalid item-use tail rejects the entire transaction", () => {
   const commands = [{ op: "walk", actor: "player", target: "key" }, { op: "take", target: "key" }, { op: "walk", actor: "player", target: "missing" }];
   const world = { inventory: [], entities: { player: { visible: "true" }, key: { visible: "true" } }, rooms: {} };
   assert.equal(prepareItemUse(commands, world), null);
+});
+
+test("triggers fire only when crossing into their region", () => {
+  const triggers = { door: [10, 10, 20, 20] };
+  let state = enteredTriggers([15, 15], triggers);
+  assert.deepEqual(state.entered, ["door"]);
+  state = enteredTriggers([16, 16], triggers, state.occupied);
+  assert.deepEqual(state.entered, []);
+  state = enteredTriggers([5, 5], triggers, state.occupied);
+  assert.deepEqual([...state.occupied], []);
+  state = enteredTriggers([15, 15], triggers, state.occupied);
+  assert.deepEqual(state.entered, ["door"]);
+});
+
+test("a spawn inside a trigger can be initialized as already occupied", () => {
+  const initial = enteredTriggers([15, 15], { return: [10, 10, 20, 20] }).occupied;
+  assert.deepEqual(enteredTriggers([15, 15], { return: [10, 10, 20, 20] }, initial).entered, []);
 });
