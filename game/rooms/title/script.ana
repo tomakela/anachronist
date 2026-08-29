@@ -1,0 +1,5 @@
+on enter() {
+    wait 120 ticks
+    enter room hall at entry
+    narrate "Find a way into the garden."
+}

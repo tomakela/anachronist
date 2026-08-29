@@ -75,6 +75,19 @@ test("INI parser rejects duplicate package values", () => {
   assert.throws(() => parseIni("[display]\nwidth=1\nwidth=2"), /duplicate key/);
 });
 
+test("INI variables before the first section are typed", () => {
+  const ini = parseIni('ready = true\ncaption = "text here"\ncount = 2\n[room]\ninteractive = false');
+  assert.deepEqual({ ...ini.$variables }, { ready: true, caption: "text here", count: 2 });
+  assert.equal(ini.room.interactive, "false");
+});
+
+test("inventory item scripts lower unqualified handlers to their item", () => {
+  const [handler] = compile('on look() {\n say "Portable"\n}', { itemId: "coffee_cup" });
+  assert.deepEqual([handler.event, handler.localTarget], ["entity.look", "coffee_cup"]);
+  assert.equal(instantiate(handler, ["coffee_cup"])[0].value, "Portable");
+  assert.deepEqual(instantiate(handler, ["coin"]), []);
+});
+
 test("package paths remain relative to the site root", () => {
   assert.equal(resolvePackagePath("game/", "interface.ini"), "game/interface.ini");
   assert.equal(resolvePackagePath("game/", "rooms/index.ini"), "game/rooms/index.ini");

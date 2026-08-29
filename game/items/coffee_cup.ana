@@ -1,0 +1,4 @@
+// Item-owned handlers remain available regardless of the current room.
+on look() {
+    say "A reassuring cup of coffee."
+}

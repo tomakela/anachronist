@@ -20,7 +20,9 @@ graphics dimensions/animation metadata and the verb/inventory interface. The roo
 [`index.html`](index.html) is intentionally only a host boot document; it contains
 no room, object, asset, resolution, palette, or interaction constants.
 
-The package entry script is `game/main.ana`. Each room has a directory containing
+The package entry script is `game/main.ana`. Variables declared before the first
+INI section become persistent `game.name` or `room_id.name` values, and every
+room namespace is initialized at startup. Each room has a directory containing
 `room.ini` data and an implicitly room-owned `script.ana`. The catalogue order is
 also the deterministic handler merge order. Scripts end simple statements at a
 newline or closing brace, reject semicolons, have no `module` declaration, and
@@ -83,7 +85,10 @@ a distinct target, and omits the first object from the available targets. A
 ground item transaction can walk to and take that item before approaching its
 target; an already inventoried item skips those obsolete steps. The complete
 transaction is rejected before movement if any step is invalid. Two-object use
-dispatches `entity.use_item`. Dialogue can
+dispatches `entity.use_item`. Inventory items can own room-independent scripts
+through `game/items/index.ini`. The demo begins with a non-interactive,
+full-display bitmap title cut scene; after two seconds it enters the hall and
+restores the verb and inventory interface. Dialogue can
 contain any number of consecutive `say` or
 `narrate` commands; each is displayed in order, with its duration calculated
 from the configurable base, per-character, and minimum tick values in

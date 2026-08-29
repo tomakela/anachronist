@@ -60,7 +60,8 @@ export function compile(source, compileContext = {}) {
     while (!peek(")")) { args.push(take().value); if (!peek(")")) take(","); }
     take(")"); newlines();
     let event = declaredEvent, localTarget;
-    if (compileContext.roomId && declaredEvent === "enter") { event = "room.enter"; args.push("room"); }
+    if (compileContext.itemId && !declaredEvent.includes(".")) { event = `entity.${declaredEvent}`; localTarget = compileContext.itemId; args.push("target"); }
+    else if (compileContext.roomId && declaredEvent === "enter") { event = "room.enter"; args.push("room"); }
     else if (compileContext.roomId && declaredEvent.includes(".") && !["game", "room", "entity", "trigger"].includes(declaredEvent.split(".")[0])) {
       const [entity, action, extra] = declaredEvent.split(".");
       if (!action || extra) throw new Error(`script: invalid room event ${declaredEvent}`);
