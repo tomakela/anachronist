@@ -177,7 +177,10 @@ stop later handlers after the current transaction commits.
 Commands are VM operations, not host calls:
 
 - `enter room ... at ...` and `leave room`;
-- `walk actor to ...`, `face actor ...`, and `stop actor`;
+- `walk actor to entity` or `walk actor to x, y`, `face actor ...`, and `stop actor`.
+  Coordinate destinations let an entity's `walk` handler define its precise
+  approach point. When no such handler exists, clicking an entity walks to the
+  clicked point rather than to the entity's declared origin;
 - `show`, `hide`, `enable`, `disable`, and component `set`;
 - `play`/`stop` for declared animations and audio cues;
 - `shake N ticks` for a deterministic, game-configured screen shake;

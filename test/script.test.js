@@ -63,6 +63,13 @@ test("a handler is fully expanded into an ordered command chain", () => {
   assert.equal(instantiate(handler, ["stone", "door"])[0].value, "No");
 });
 
+test("walk commands accept script-configured coordinate destinations", () => {
+  const [handler] = compile(`on door.walk() {
+    walk player to 123, 87
+  }`, { roomId: "hall", entities: ["door"] });
+  assert.deepEqual(instantiate(handler, ["door"]), [{ op: "walk", actor: "player", point: [123, 87], value: undefined }]);
+});
+
 test("handlers can branch on game-global state", () => {
   const [handler] = compile(`on room.enter() {
     if (game.key_taken == true) { hide key
@@ -328,6 +335,18 @@ const fallbackRuntime = (handlers = []) => {
   });
   return runtime;
 };
+
+test("clicking an entity without a walk handler walks to the clicked point", () => {
+  const runtime = fallbackRuntime();
+  Object.assign(runtime, {
+    interactive: true, activeVerb: null, firstObject: null, message: "", width: 320, height: 200,
+    targetAt: () => "door", inventoryLayout: () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} }),
+    interruptCommands() { this.queue = []; }, actionSentence: ""
+  });
+  runtime.ui.accessibility = { walk_to: "Walk to {target}" };
+  runtime.pointer({ button: 0, point: [111.4, 82.6] });
+  assert.deepEqual(runtime.queue, [{ op: "walk", actor: "player", point: [111, 83], manual: true }]);
+});
 
 test("ground and inventory objects with the same id dispatch separate look handlers", () => {
   const roomHandler = compile('on key.look() {\n say "On the floor"\n}', { roomId: "hall", entities: ["key"] })[0];
