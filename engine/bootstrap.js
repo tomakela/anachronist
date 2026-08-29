@@ -1,13 +1,10 @@
 import { parseIni, integer, tuple, list } from "./ini.js";
-import { compile, instantiate, textDuration } from "./script.js";
+import { BackgroundTasks, compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { bitmapPixels, loadBitmaps } from "./bitmaps.js";
-import { bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
-import { loadBitmaps } from "./bitmaps.js";
 import { parseActionBindings, reconcileTargetFocus } from "./input.js";
-import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
 import { SaveStorage, snapshotRuntime, validateSnapshot } from "./save.js";
-import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
+import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
 
 const root = typeof document === "undefined" ? null : document.querySelector("#engine-host");
 const entry = typeof document === "undefined" ? null : document.querySelector('meta[name="game-entry"]')?.content;
@@ -47,18 +44,15 @@ async function boot() {
   new Runtime(game, ui, rooms, items, graphics, animations, bitmaps, handlers, input).start();
 }
 
-class Runtime {
+export class Runtime {
   constructor(game, ui, rooms, items, graphics, animations, bitmaps, handlers, input) {
     Object.assign(this, { game, ui, rooms, items, graphics, animations, bitmaps, handlers, input });
-export class Runtime {
-  constructor(game, ui, rooms, items, graphics, animations, bitmaps, handlers) {
-    Object.assign(this, { game, ui, rooms, items, graphics, animations, bitmaps, handlers });
     this.saveIdentity = { packageId: game.package.id, formatVersion: game.save?.format_version };
     if (!this.saveIdentity.packageId || !this.saveIdentity.formatVersion) throw new Error("package.id and save.format_version are required");
     this.storage = new SaveStorage(window.localStorage, this.saveIdentity.packageId);
     this.entities = Object.create(null); this.roomEntities = Object.create(null); this.inventory = []; this.inventoryEntities = Object.create(null); this.globals = { ...game.$variables };
     this.roomState = Object.fromEntries(Object.entries(rooms).map(([id, room]) => [id, { ...room.$variables }]));
-    this.activeVerb = null; this.firstObject = null; this.hoverTarget = null; this.queue = []; this.message = ""; this.messageKind = ""; this.messageTicks = 0; this.actionSentence = ""; this.tick = 0; this.shakeTicks = 0; this.inventoryRow = 0;
+    this.activeVerb = null; this.firstObject = null; this.hoverTarget = null; this.queue = []; this.backgroundTasks = new BackgroundTasks((command) => this.performBackground(command)); this.message = ""; this.messageKind = ""; this.messageTicks = 0; this.actionSentence = ""; this.tick = 0; this.shakeTicks = 0; this.inventoryRow = 0;
     this.width = integer(game.display.logical_width, "logical_width"); this.height = integer(game.display.logical_height, "logical_height");
     this.canvas = document.createElement("canvas"); this.canvas.width = this.width; this.canvas.height = this.height;
     const aspect = this.width / this.height;
@@ -236,7 +230,9 @@ export class Runtime {
   }
   enqueueFallback(verb, args) { this.queue.push(...this.fallbackCommands(verb, args)); }
   enter(id, spawn) {
-    const room = this.rooms[id]; if (!room) throw new Error(`Unknown room ${id}`); this.room = id;
+    const room = this.rooms[id]; if (!room) throw new Error(`Unknown room ${id}`);
+    if (this.room && this.room !== id) this.backgroundTasks.cancelRoom(this.room);
+    this.room = id;
     this.interactive = room.room.interactive !== "false";
     this.interfaceVisible = room.room.interface_visible !== "false" && room.room.fullscreen !== "true";
     this.playerScaling = parseScalingStops(room.room.player_scaling || "0,1; 1,1", `${id}.room.player_scaling`);
@@ -298,12 +294,6 @@ export class Runtime {
   }
   cancelTouch(event) { if (this.touch?.id === event.pointerId) { clearTimeout(this.touch.timer); this.touch = null; } }
   dispatchPhysicalTouch(gesture, event, point) { event.preventDefault(); const action = this.input.touch.get(gesture); if (action) this.inputAction(action, { point, event }); }
-  pointer(event, button = event.button, point = this.eventPoint(event)) {
-    event.preventDefault();
-    const action = this.input.pointer.get(button); if (action) this.inputAction(action, { point, event });
-  }
-  secondaryAt(point) { this.clearSelection(); const [x, y] = point; this.perform("look", this.targetAt(x, y)); }
-  primaryAt(point) {
   pointer(event, button = event.button, point = this.eventPoint(event), fast = false) {
     event.preventDefault();
     if (fast && this.queue.length) { this.accelerateCommands(); return; }
@@ -389,6 +379,7 @@ export class Runtime {
   bounds(entity) { const spec = this.graphics[`graphic.${entity.graphic}`], baseSize = tuple(entity.size || `${spec.width},${spec.height}`, 2, entity.id), baseOrigin = entity.origin ? tuple(entity.origin, 2, `${entity.id}.origin`) : [baseSize[0] / 2, baseSize[1] / 2], scale = entity.id === "player" ? interpolatedScale(entity.position[1], this.playerScaling) : 1, size = baseSize.map((value) => value * scale), origin = baseOrigin.map((value) => value * scale); return [entity.position[0] - origin[0], entity.position[1] - origin[1], ...size]; }
   step() {
     this.tick++;
+    this.backgroundTasks.step();
     if (this.shakeTicks > 0) this.shakeTicks--;
     if (this.message) { if (--this.messageTicks <= 0) this.dismissMessage(); return; }
     const player = this.entities.player;
@@ -404,8 +395,16 @@ export class Runtime {
     else if (command.op === "set") { const [id, field] = command.target.split("."); if (id === "game") this.globals[field] = command.value; else if (this.roomState[id]) this.roomState[id][field] = command.value; else this.entities[id][field] = String(command.value); }
     else if (command.op === "wait") { if (!command.skipPresentation) this.queue.unshift(...Array(command.fast ? 1 : command.ticks).fill({ op: "pause", skippable: command.skippable })); }
     else if (command.op === "shake") { if (!command.skipPresentation) this.shakeTicks = command.fast ? 1 : command.ticks; }
+    else if (command.op === "spawn") this.backgroundTasks.start(command.definition, command.args, command.ownerRoom);
     else if (command.op === "pause") return;
     else if (command.op === "face") this.entities[command.actor].facing = command.direction;
+  }
+  performBackground(command) {
+    if (command.op === "set") { const [id, field] = command.target.split("."); if (id === "game") this.globals[field] = command.value; else if (this.roomState[id]) this.roomState[id][field] = command.value; else if (this.entities[id]) this.entities[id][field] = String(command.value); }
+    else if ((command.op === "show" || command.op === "hide") && this.entities[command.target]) this.entities[command.target].visible = command.op === "show" ? "true" : "false";
+    else if (command.op === "face" && this.entities[command.actor]) this.entities[command.actor].facing = command.direction;
+    else if (command.op === "spawn") this.backgroundTasks.start(command.definition, command.args, command.ownerRoom);
+    else throw new Error(`script: ${command.op} is not supported in a background task`);
   }
   updateTriggers(point) { const state = enteredTriggers(point, this.triggers, this.occupiedTriggers); this.occupiedTriggers = state.occupied; for (const id of state.entered) if (!this.queue.some(({ op }) => op === "enter")) this.dispatch("trigger.enter", [id]); }
   animationDuration(action, facing) { const animation = this.animations[`animation.${action}_${facing || "down"}`]; if (!animation?.frames) return 1; return animation.frames.split(";").reduce((sum, frame) => sum + tuple(frame.trim(), 5, "animation frame")[4], 0); }
