@@ -4,7 +4,8 @@ import { resolvePackagePath } from "./path.js";
 import { bitmapPixels, loadBitmaps } from "./bitmaps.js";
 import { parseActionBindings, reconcileTargetFocus } from "./input.js";
 import { SaveStorage, snapshotRuntime, validateSnapshot } from "./save.js";
-import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
+import { DeterministicVM } from "./vm.js";
+import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
 
 const root = typeof document === "undefined" ? null : document.querySelector("#engine-host");
 const entry = typeof document === "undefined" ? null : document.querySelector('meta[name="game-entry"]')?.content;
@@ -44,8 +45,9 @@ async function boot() {
   new Runtime(game, ui, rooms, items, graphics, animations, bitmaps, handlers, input).start();
 }
 
-export class Runtime {
+export class Runtime extends DeterministicVM {
   constructor(game, ui, rooms, items, graphics, animations, bitmaps, handlers, input) {
+    super();
     Object.assign(this, { game, ui, rooms, items, graphics, animations, bitmaps, handlers, input });
     this.saveIdentity = { packageId: game.package.id, formatVersion: game.save?.format_version };
     if (!this.saveIdentity.packageId || !this.saveIdentity.formatVersion) throw new Error("package.id and save.format_version are required");
@@ -99,8 +101,8 @@ export class Runtime {
   }
   inputAction(action, detail = {}) {
     if (!this.interactive && action !== "cancel" && action !== "dialogue_advance") return;
-    if (action === "pointer_primary") return this.pointer(detail.event, 0, detail.point, detail.fast);
-    if (action === "pointer_secondary") return this.pointer(detail.event, 2, detail.point, detail.fast);
+    if (action === "pointer_primary") return this.action({ type: "pointer", button: 0, point: detail.point, fast: detail.fast });
+    if (action === "pointer_secondary") return this.action({ type: "pointer", button: 2, point: detail.point, fast: detail.fast });
     if (action === "focus_next") return this.moveFocus(1);
     if (action === "focus_previous") return this.moveFocus(-1);
     if (action === "inventory_next") return this.moveInventoryFocus(1);
@@ -114,7 +116,7 @@ export class Runtime {
   selectVerb(verb) { if (this.message) this.dismissMessage(); this.stopWalking(); this.activeVerb = verb; this.firstObject = null; this.updateAccessibility(); }
   cancelInteraction() { this.clearSelection(); this.interruptCommands(); if (this.message) this.dismissMessage(); this.actionSentence = ""; this.updateAccessibility(); }
   refreshInteractiveTargets() {
-    const roomTargets = entityRenderOrder(this.entities).filter((entity) => entity.id !== "player" && entityIsInteractive(entity)).map((entity) => ({ id: entity.id, kind: "room" }));
+    const roomTargets = entityRenderOrder(this.entities).filter((entity) => entity.id !== this.game.protocol.player_actor && entityIsInteractive(entity)).map((entity) => ({ id: entity.id, kind: "room" }));
     const inventoryTargets = this.inventory.filter((id) => id !== this.firstObject).map((id) => ({ id, kind: "inventory" }));
     const next = [...roomTargets, ...inventoryTargets], focus = reconcileTargetFocus(next, this.focusedTarget, this.focusedTargetIndex);
     const changed = focus.id !== this.focusedTarget || next.map(({ id }) => id).join("\0") !== this.interactiveTargets.map(({ id }) => id).join("\0");
@@ -135,21 +137,11 @@ export class Runtime {
     const index = this.inventory.indexOf(this.focusedTarget); if (index < 0) return;
     const layout = this.inventoryLayout(), columns = Math.max(1, layout.page.end - layout.page.start || 1); this.inventoryRow = Math.floor(index / columns);
   }
-  activateFocused(secondary) {
-    this.refreshInteractiveTargets(); const target = this.focusedTarget; if (!target) return;
-    if (this.message) { this.dismissMessage(); return; }
-    if (secondary) { this.clearSelection(); this.perform("look", target); return; }
-    if (!this.activeVerb) { if (this.inventory.includes(target)) return; this.interruptCommands(); this.actionSentence = `Walk to ${this.label(target)}`; if (!this.dispatch("entity.walk", [target])) this.queue = [{ op: "walk", actor: "player", target, manual: true }]; return; }
-    if (this.activeVerb === "use" && !this.firstObject) { this.firstObject = target; this.refreshInteractiveTargets(); return; }
-    if (this.activeVerb === "use") { this.interruptCommands(); this.actionSentence = this.verbSentence("use", this.firstObject, target); const commands = this.commands("entity.use_item", [this.firstObject, target]), prepared = commands && prepareItemUse(commands, this); if (prepared) this.queue.push(...prepared); }
-    else this.perform(this.activeVerb, target);
-    this.clearSelection(); this.refreshInteractiveTargets();
-  }
   updateAccessibility() {
     if (!this.accessibilityTargets) return;
-    const selected = this.activeVerb ? `${title(this.activeVerb)}${this.firstObject ? ` ${this.label(this.firstObject)}` : ""}` : "Walk to";
-    this.accessibilityStatus.textContent = `Selected action: ${selected}. Focused target: ${this.label(this.focusedTarget) || "none"}.`;
-    this.accessibilityTargets.replaceChildren(...this.interactiveTargets.map(({ id, kind }) => { const option = document.createElement("div"); option.id = `game-target-${id.replace(/[^a-z0-9_-]/gi, "-")}`; option.setAttribute("role", "option"); option.setAttribute("aria-selected", String(id === this.focusedTarget)); option.textContent = `${this.label(id)} (${kind})`; return option; }));
+    const selected = this.activeVerb ? `${this.ui[`verb.${this.activeVerb}`]?.label}${this.firstObject ? ` ${this.label(this.firstObject)}` : ""}` : this.phrase("walk_to", { target: "" }).trim();
+    this.accessibilityStatus.textContent = this.phrase("selected_action", { action: selected, target: this.label(this.focusedTarget) || this.ui.accessibility.no_target });
+    this.accessibilityTargets.replaceChildren(...this.interactiveTargets.map(({ id, kind }) => { const option = document.createElement("div"); option.id = `game-target-${id.replace(/[^a-z0-9_-]/gi, "-")}`; option.setAttribute("role", "option"); option.setAttribute("aria-selected", String(id === this.focusedTarget)); option.textContent = `${this.label(id)} (${this.ui.accessibility[`${kind}_target_kind`]})`; return option; }));
     const ids = [...this.accessibilityTargets.children].map(({ id }) => id); this.canvas.setAttribute("aria-owns", ids.join(" "));
     const active = this.accessibilityTargets.querySelector('[aria-selected="true"]'); if (active) this.canvas.setAttribute("aria-activedescendant", active.id); else this.canvas.removeAttribute("aria-activedescendant");
   }
@@ -216,48 +208,6 @@ export class Runtime {
   }
   dispatch(event, args) { const handler = this.matchingHandler(event, args); if (!handler) return 0; const commands = instantiate(handler, args, this.scriptState()); this.queue.push(...commands); return commands.length; }
   commands(event, args) { const handler = this.matchingHandler(event, args); return handler ? instantiate(handler, args, this.scriptState()) : null; }
-  fallbackCommands(verb, args) {
-    const target = args.at(-1), localEvent = `entity.fallback_${verb}`;
-    const candidates = [
-      this.handlers.find((handler) => handler.event === localEvent && handler.roomId === this.room && args.includes(handler.localTarget)),
-      this.handlers.find((handler) => handler.event === `fallback.${verb}` && handler.itemId && args.includes(handler.localTarget)),
-      this.handlers.find((handler) => handler.event === `fallback.${verb}` && handler.roomId === this.room && !handler.localTarget),
-      this.handlers.find((handler) => handler.event === `fallback.${verb}` && !handler.roomId && !handler.itemId && !handler.localTarget)
-    ];
-    const handler = candidates.find(Boolean);
-    if (handler) return instantiate(handler, args, this.scriptState());
-    const spec = this.ui[`fallback.${verb}`] || this.ui.fallback || {};
-    const template = spec.text || this.ui.fallback?.text || "That doesn't work with {target}.";
-    const labels = args.map((id) => this.label(id));
-    const value = template.replaceAll("{verb}", this.ui[`verb.${verb}`]?.label || title(verb))
-      .replaceAll("{target}", labels.at(-1)).replaceAll("{first}", labels[0]).replaceAll("{second}", labels[1] ?? "");
-    return [{ op: "narrate", value }];
-  }
-  enqueueFallback(verb, args) { this.queue.push(...this.fallbackCommands(verb, args)); }
-  enter(id, spawn) {
-    const room = this.rooms[id]; if (!room) throw new Error(`Unknown room ${id}`);
-    if (this.room && this.room !== id) this.backgroundTasks.cancelRoom(this.room);
-    this.room = id;
-    this.interactive = room.room.interactive !== "false";
-    this.interfaceVisible = room.room.interface_visible !== "false" && room.room.fullscreen !== "true";
-    this.playerScaling = parseScalingStops(room.room.player_scaling || "0,1; 1,1", `${id}.room.player_scaling`);
-    const mask = room.room.walk_mask;
-    this.walkable = mask ? bitmapWalkRegion(this.bitmaps[mask], this.width, this.height) : () => true;
-    this.entities = retainedRoomEntities(this.roomEntities, id, () => {
-      const entities = Object.create(null);
-      for (const [section, values] of Object.entries(room)) if (section.startsWith("entity.")) entities[section.slice(7)] = { id: section.slice(7), ...values, position: tuple(values.position, 2, `${section}.position`) };
-      return entities;
-    });
-    for (const item of roomEntryItems(room)) if (!this.inventory.includes(item.id)) {
-      this.inventory.push(item.id); this.inventoryEntities[item.id] = { ...item, visible: "false", position: [0, 0] };
-    }
-    const point = tuple(room[`spawn.${spawn}`].position, 2, "spawn"), player = this.animations.player || {}; this.entities.player = { id: "player", position: point, graphic: player.graphic || "placeholder.actor", size: player.size || "16,32", origin: player.origin, label: "player", visible: room.room.player_visible === "false" ? "false" : "true", facing: "down", moving: false, action: null, actionTicks: 0 };
-    this.triggers = Object.fromEntries(Object.entries(room).filter(([section]) => section.startsWith("trigger.")).map(([section, values]) => [section.slice(8), tuple(values.rect, 4, `${section}.rect`)]));
-    // A spawn may deliberately overlap a destination trigger. Treat it as
-    // occupied until the player leaves, rather than immediately bouncing back.
-    this.occupiedTriggers = enteredTriggers(point, this.triggers).occupied;
-    this.dispatch("room.enter", [id]); this.refreshInteractiveTargets();
-  }
   eventPoint(event) { const rect = this.canvas.getBoundingClientRect(); return [(event.clientX - rect.left) * this.width / rect.width, (event.clientY - rect.top) * this.height / rect.height]; }
   hover(event) { const [x, y] = this.eventPoint(event); this.updateHover(x, y); }
   updateHover(x, y) {
@@ -266,7 +216,7 @@ export class Runtime {
   }
   pointerDown(event) {
     if (event.target.closest?.(".mobile-settings")) return;
-    if (event.pointerType !== "touch") { if (event.target === this.canvas) this.pointer(event, event.button, undefined, event.button === 0 && event.detail >= 2); return; }
+    if (event.pointerType !== "touch") { if (event.target === this.canvas) this.action({ type: "pointer", button: event.button, point: this.eventPoint(event), fast: event.button === 0 && event.detail >= 2 }); return; }
     if (this.cursorMode !== "drag" && event.target !== this.canvas) return;
     if (this.touch) return;
     event.preventDefault(); root.setPointerCapture(event.pointerId);
@@ -298,53 +248,11 @@ export class Runtime {
   }
   cancelTouch(event) { if (this.touch?.id === event.pointerId) { clearTimeout(this.touch.timer); this.touch = null; } }
   dispatchPhysicalTouch(gesture, event, point, fast = false) { event.preventDefault(); const action = this.input.touch.get(gesture); if (action) this.inputAction(action, { point, event, fast }); }
-  pointer(event, button = event.button, point = this.eventPoint(event), fast = false) {
-    event.preventDefault();
-    if (fast && this.queue.length) { this.accelerateCommands(); return; }
-    if (!this.interactive) return;
-    const [x, y] = point;
-    {
-      const inventory = this.inventoryLayout();
-      if (inside(x, y, inventory.upRect) && inventory.page.up) { this.inventoryRow--; return; }
-      if (inside(x, y, inventory.downRect) && inventory.page.down) { this.inventoryRow++; return; }
-    }
-    let selectedVerb = null;
-    if (button === 0) for (const verb of list(this.ui.verb_panel.verbs)) { const box = tuple(this.ui[`verb.${verb}`].rect, 4, verb); if (inside(x, y, box)) { selectedVerb = verb; break; } }
-    if (this.message) {
-      this.dismissMessage();
-      // A verb click still advances dialogue, but becomes a selection when it
-      // closed the final piece of text in the current command chain.
-      if (selectedVerb && !this.queue.some(({ op }) => op === "say" || op === "narrate")) { this.activeVerb = selectedVerb; this.firstObject = null; }
-      return;
-    }
-    if (selectedVerb) { this.stopWalking(); this.activeVerb = selectedVerb; this.firstObject = null; return; }
-    const target = this.targetAt(x, y);
-    if (interfacePoint(x, y, this.ui, this.width, this.height) && !target) return;
-    if (!this.activeVerb && this.inventory.includes(target)) return;
-    if (!this.activeVerb) {
-      this.interruptCommands(); this.actionSentence = target ? `Walk to ${this.label(target)}` : "Walk to";
-      if (!target) this.queue = [{ op: "walk", actor: "player", point: [Math.round(x), Math.round(y)], manual: true, fast }];
-      else if (!this.dispatch("entity.walk", [target])) this.queue = [{ op: "walk", actor: "player", target, manual: true }];
-      if (fast) this.accelerateCommands();
-      return;
-    }
-    if (this.activeVerb === "use") {
-      if (!this.firstObject && target) { this.firstObject = target; this.hoverTarget = null; return; }
-      else if (target) {
-        this.interruptCommands(); this.actionSentence = this.verbSentence("use", this.firstObject, target);
-        const commands = this.commands("entity.use_item", [this.firstObject, target]);
-        const prepared = commands && prepareItemUse(commands, this);
-        if (prepared) this.queue.push(...prepared);
-        else this.enqueueFallback("use_item", [this.firstObject, target]);
-      }
-    } else this.perform(this.activeVerb, target);
-    this.clearSelection();
-  }
   accelerateCommands() {
     const skipping = accelerateCommandQueue(this.queue);
-    if (skipping) { this.dismissMessage(); const player = this.entities.player; if (player) player.actionTicks = 0; }
+    if (skipping) { this.dismissMessage(); const player = this.entities[this.game.protocol.player_actor]; if (player) player.actionTicks = 0; }
   }
-  interruptCommands() { this.queue = []; const player = this.entities.player; if (player) { player.moving = false; player.action = null; player.actionTicks = 0; } }
+  interruptCommands() { this.queue = []; const player = this.entities[this.game.protocol.player_actor]; if (player) { player.moving = false; player.action = null; player.actionTicks = 0; } }
   stopWalking() {
     const command = this.queue[0];
     if (command?.op !== "walk") return;
@@ -376,62 +284,31 @@ export class Runtime {
     const columns = Math.max(1, Math.floor((this.width - origin[0] - arrowWidth) / itemWidth));
     this.inventoryRow = inventoryLastRow(this.inventory.length, columns);
   }
-  perform(verb, target) { if (!target) return; this.interruptCommands(); this.actionSentence = this.verbSentence(verb, target); const commands = this.commands(`entity.${verb}`, [target]); if (commands) { if (verb === "use") this.queue.push({ op: "animate", actor: "player", animation: "use" }); this.queue.push(...commands); } else this.enqueueFallback(verb, [target]); }
   verbSentence(verb, first, second) { return verbSentence(this.ui, (id) => this.label(id), verb, first, second); }
   dismissMessage() { this.message = ""; this.messageTicks = 0; this.messageKind = ""; if (!this.queue.length) this.actionSentence = ""; }
   clearSelection() { this.activeVerb = null; this.firstObject = null; }
-  bounds(entity) { const spec = this.graphics[`graphic.${entity.graphic}`], baseSize = tuple(entity.size || `${spec.width},${spec.height}`, 2, entity.id), baseOrigin = entity.origin ? tuple(entity.origin, 2, `${entity.id}.origin`) : [baseSize[0] / 2, baseSize[1] / 2], scale = entity.id === "player" ? interpolatedScale(entity.position[1], this.playerScaling) : 1, size = baseSize.map((value) => value * scale), origin = baseOrigin.map((value) => value * scale); return [entity.position[0] - origin[0], entity.position[1] - origin[1], ...size]; }
-  step() {
-    this.tick++;
-    this.backgroundTasks.step();
-    if (this.shakeTicks > 0) this.shakeTicks--;
-    if (this.message) { if (--this.messageTicks <= 0) this.dismissMessage(); return; }
-    const player = this.entities.player;
-    if (player?.actionTicks > 0) { if (--player.actionTicks === 0) player.action = null; return; }
-    const command = this.queue[0]; if (!command) { this.actionSentence = ""; return; }
-    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const dx = target[0] - actor.position[0], dy = target[1] - actor.position[1]; actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); const result = advanceWalk(actor.position, target, this.walkSpeed, command.fast ? this.fastWalkMultiplier : 1, actor.id === "player" ? this.walkable : () => true, (point) => { if (actor.id === "player") this.updateTriggers(point); }); actor.position = result.point; actor.moving = !result.reached && !result.blocked; if (result.reached || result.blocked) { actor.moving = false; this.queue.shift(); if (result.blocked) this.actionSentence = ""; } return; }
-    this.queue.shift();
-    if (command.op === "enter") this.enter(command.room, command.spawn);
-    else if (command.op === "say" || command.op === "narrate") { if (command.skipPresentation) return; this.message = command.value; this.messageKind = command.op; this.messageTicks = command.fast ? 1 : textDuration(command.value, this.game.runtime); }
-    else if (command.op === "animate") { const actor = this.entities[command.actor]; if (actor) { actor.moving = false; actor.action = command.animation; actor.actionTicks = command.skipPresentation ? 0 : (command.fast ? 1 : this.animationDuration(command.animation, actor.facing)); } }
-    else if (command.op === "take") { const entity = this.entities[command.target]; if (entity && !this.inventory.includes(command.target)) { if (!command.animated) { this.queue.unshift({ ...command, animated: true }); this.queue.unshift({ op: "animate", actor: "player", animation: "pickup" }); return; } entity.visible = "false"; this.inventoryEntities[command.target] = { ...this.items[command.target], ...entity }; this.inventory.push(command.target); this.scrollInventoryToEnd(); } }
-    else if (command.op === "hide" || command.op === "show") this.entities[command.target].visible = command.op === "show" ? "true" : "false";
-    else if (command.op === "set") { const [id, field] = command.target.split("."); if (id === "game") this.globals[field] = command.value; else if (this.roomState[id]) this.roomState[id][field] = command.value; else this.entities[id][field] = String(command.value); }
-    else if (command.op === "wait") { if (!command.skipPresentation) this.queue.unshift(...Array(command.fast ? 1 : command.ticks).fill({ op: "pause", skippable: command.skippable })); }
-    else if (command.op === "shake") { if (!command.skipPresentation) this.shakeTicks = command.fast ? 1 : command.ticks; }
-    else if (command.op === "spawn") this.backgroundTasks.start(command.definition, command.args, command.ownerRoom);
-    else if (command.op === "pause") return;
-    else if (command.op === "face") this.entities[command.actor].facing = command.direction;
-  }
-  performBackground(command) {
-    if (command.op === "set") { const [id, field] = command.target.split("."); if (id === "game") this.globals[field] = command.value; else if (this.roomState[id]) this.roomState[id][field] = command.value; else if (this.entities[id]) this.entities[id][field] = String(command.value); }
-    else if ((command.op === "show" || command.op === "hide") && this.entities[command.target]) this.entities[command.target].visible = command.op === "show" ? "true" : "false";
-    else if (command.op === "face" && this.entities[command.actor]) this.entities[command.actor].facing = command.direction;
-    else if (command.op === "spawn") this.backgroundTasks.start(command.definition, command.args, command.ownerRoom);
-    else throw new Error(`script: ${command.op} is not supported in a background task`);
-  }
-  updateTriggers(point) { const state = enteredTriggers(point, this.triggers, this.occupiedTriggers); this.occupiedTriggers = state.occupied; for (const id of state.entered) if (!this.queue.some(({ op }) => op === "enter")) this.dispatch("trigger.enter", [id]); }
+  bounds(entity) { const spec = this.graphics[`graphic.${entity.graphic}`], baseSize = tuple(entity.size || `${spec.width},${spec.height}`, 2, entity.id), baseOrigin = entity.origin ? tuple(entity.origin, 2, `${entity.id}.origin`) : [baseSize[0] / 2, baseSize[1] / 2], scale = entity.id === this.game.protocol.player_actor ? interpolatedScale(entity.position[1], this.playerScaling) : 1, size = baseSize.map((value) => value * scale), origin = baseOrigin.map((value) => value * scale); return [entity.position[0] - origin[0], entity.position[1] - origin[1], ...size]; }
   animationDuration(action, facing) { const animation = this.animations[`animation.${action}_${facing || "down"}`]; if (!animation?.frames) return 1; return animation.frames.split(";").reduce((sum, frame) => sum + tuple(frame.trim(), 5, "animation frame")[4], 0); }
-  frame(now) { if (now - this.last >= 1000 / integer(this.game.runtime.ticks_per_second, "tick rate")) { this.step(); this.last = now; } this.draw(); requestAnimationFrame((time) => this.frame(time)); }
-  draw() {
+  frame(now) { if (now - this.last >= 1000 / integer(this.game.runtime.ticks_per_second, "tick rate")) { this.step(); this.last = now; } this.draw(this.sceneSnapshot()); requestAnimationFrame((time) => this.frame(time)); }
+  draw(scene) {
     this.refreshInteractiveTargets();
-    const c = this.ctx, room = this.rooms[this.room], background = room?.room.background_color || "#000";
+    const c = this.ctx, room = this.rooms[scene.room], background = room?.room.background_color || "#000";
     c.fillStyle = background; c.fillRect(0, 0, this.width, this.height);
     c.save(); const [shakeX, shakeY] = shakeOffset(this.shakeTicks, integer(this.game.runtime.shake_amplitude || "2", "shake amplitude")); c.translate(shakeX, shakeY);
     c.fillStyle = background; c.fillRect(0, 0, this.width, this.height);
-    if (room) for (const entity of entityRenderOrder(this.entities)) if (entity.visible !== "false") this.sprite(entity);
+    if (room) for (const entity of entityRenderOrder(scene.entities)) if (entity.visible !== "false") this.sprite(entity);
     if (room && (room.room.hotspot_overlay === "true" || this.game.runtime.hotspot_overlay === "true")) this.drawHotspots();
     if (!this.interfaceVisible) { c.restore(); return; }
     const inventory = this.inventoryLayout();
-    for (const [i, id] of this.inventory.slice(inventory.page.start, inventory.page.end).entries()) this.sprite({ ...this.inventoryEntities[id], ...this.items[id], visible: "true", position: [inventory.origin[0] + i * inventory.itemWidth, inventory.origin[1]], origin: "0,0", size: `${inventory.itemWidth},${inventory.itemHeight}` });
+    for (const [i, id] of scene.inventory.slice(inventory.page.start, inventory.page.end).entries()) this.sprite({ ...scene.inventoryEntities[id], ...this.items[id], visible: "true", position: [inventory.origin[0] + i * inventory.itemWidth, inventory.origin[1]], origin: "0,0", size: `${inventory.itemWidth},${inventory.itemHeight}` });
     this.inventoryArrow(inventory.upRect, "up", inventory.page.up); this.inventoryArrow(inventory.downRect, "down", inventory.page.down);
-    this.textRegion(this.ui.message_region, this.messageKind === "narrate" ? this.message : "");
-    if (this.messageKind === "say") this.speech(this.entities.player, this.message);
+    this.textRegion(this.ui.message_region, scene.messageKind === "narrate" ? scene.message : "");
+    if (scene.messageKind === "say") this.speech(scene.entities[this.game.protocol.player_actor], scene.message);
     const hoverTarget = this.hoverTarget === this.firstObject ? null : this.hoverTarget;
-    const hoverSentence = hoverTarget ? (this.activeVerb ? this.verbSentence(this.activeVerb, this.firstObject || hoverTarget, this.firstObject ? hoverTarget : null) : (this.inventory.includes(hoverTarget) ? this.label(hoverTarget) : `Walk to ${this.label(hoverTarget)}`)) : "";
+    const hoverSentence = hoverTarget ? (this.activeVerb ? this.verbSentence(this.activeVerb, this.firstObject || hoverTarget, this.firstObject ? hoverTarget : null) : (this.inventory.includes(hoverTarget) ? this.label(hoverTarget) : this.phrase("walk_to", { target: this.label(hoverTarget) }))) : "";
     const composing = this.activeVerb ? [title(this.activeVerb), this.firstObject && this.label(this.firstObject), this.firstObject && this.ui[`verb.${this.activeVerb}`]?.object_preposition].filter(Boolean).join(" ") : "";
-    const walking = this.queue[0]?.op === "walk" ? `Walk to ${this.label(this.queue[0].target)}` : "";
-    this.textRegion(this.ui.sentence_region, this.actionSentence || walking || hoverSentence || composing);
+    const walking = this.queue[0]?.op === "walk" ? this.phrase("walk_to", { target: this.label(this.queue[0].target) }) : "";
+    this.textRegion(this.ui.sentence_region, scene.actionSentence || walking || hoverSentence || composing);
     for (const verb of list(this.ui.verb_panel.verbs)) { const spec = this.ui[`verb.${verb}`]; this.panel(spec.rect, spec.label, this.activeVerb === verb); }
     if (this.coarsePointer) this.cursor(this.touchCursor);
     this.focusIndicator();
@@ -447,12 +324,12 @@ export class Runtime {
   }
   label(id) { return (this.inventory.includes(id) ? this.items[id]?.label : this.entities[id]?.label) || this.inventoryEntities[id]?.label || id?.replaceAll("_", " ") || ""; }
   sprite(entity) {
-    const [x, y, w, h] = this.bounds(entity), graphic = this.graphics[`graphic.${entity.graphic}`], bitmap = this.bitmaps[entity.graphic], animation = entity.id === "player" ? this.animations[`animation.${entity.action || (entity.moving ? "walking" : "idle")}_${entity.facing || "down"}`] : graphic;
+    const [x, y, w, h] = this.bounds(entity), graphic = this.graphics[`graphic.${entity.graphic}`], bitmap = this.bitmaps[entity.graphic], animation = entity.id === this.game.protocol.player_actor ? this.animations[`animation.${entity.action || (entity.moving ? "walking" : "idle")}_${entity.facing || "down"}`] : graphic;
     if (bitmap) { this.drawBitmap(entity, bitmap, animation?.frames ? this.currentFrame(entity) : null, x, y, w, h); return; }
     this.ctx.fillStyle = this.graphics[`graphic.${entity.graphic}`]?.missing_color || "#ff00ff"; this.ctx.fillRect(Math.round(x), Math.round(y), w, h);
   }
   currentFrame(entity) {
-    const animation = entity.id === "player" ? this.animations[`animation.${entity.action || (entity.moving ? "walking" : "idle")}_${entity.facing || "down"}`] : this.graphics[`graphic.${entity.graphic}`];
+    const animation = entity.id === this.game.protocol.player_actor ? this.animations[`animation.${entity.action || (entity.moving ? "walking" : "idle")}_${entity.facing || "down"}`] : this.graphics[`graphic.${entity.graphic}`];
     if (!animation?.frames) return null;
     const frames = animation.frames.split(";").map((frame) => tuple(frame.trim(), 5, "animation frame")), cycle = frames.reduce((sum, frame) => sum + frame[4], 0);
     let phase = entity.action ? Math.max(0, cycle - entity.actionTicks) % cycle : this.tick % cycle;
