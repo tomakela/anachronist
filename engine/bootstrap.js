@@ -2,10 +2,10 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { BackgroundTasks, compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { bitmapPixels, loadBitmaps } from "./bitmaps.js";
-import { parseActionBindings, reconcileTargetFocus } from "./input.js";
+import { parseActionBindings } from "./input.js";
 import { SaveStorage, snapshotRuntime, validateSnapshot } from "./save.js";
 import { DeterministicVM } from "./vm.js";
-import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
+import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
 
 const root = typeof document === "undefined" ? null : document.querySelector("#engine-host");
 const entry = typeof document === "undefined" ? null : document.querySelector('meta[name="game-entry"]')?.content;
@@ -68,11 +68,6 @@ export class Runtime extends DeterministicVM {
     this.longTouchMilliseconds = integer(game.input.long_touch_milliseconds, "long touch milliseconds");
     this.longTouchMoveTolerance = Number(game.input.long_touch_move_tolerance ?? 8);
     if (!Number.isFinite(this.longTouchMoveTolerance) || this.longTouchMoveTolerance < 0) throw new Error("long_touch_move_tolerance must be a non-negative number");
-    this.touchCursor = [this.width / 2, this.height / 2]; this.touch = null; this.interactiveTargets = []; this.focusedTarget = null; this.focusedTargetIndex = 0;
-    this.accessibility = document.createElement("section"); this.accessibility.className = "game-accessibility"; this.accessibility.ariaLabel = "Interactive game targets";
-    this.accessibilityStatus = document.createElement("p"); this.accessibilityStatus.setAttribute("aria-live", "polite");
-    this.accessibilityTargets = document.createElement("div"); this.accessibilityTargets.setAttribute("role", "listbox"); this.accessibility.append(this.accessibilityStatus, this.accessibilityTargets);
-    root.replaceChildren(this.canvas, this.accessibility, this.settings()); root.ariaBusy = "false";
     this.walkSpeed = Number(game.runtime.walk_speed); this.fastWalkMultiplier = Number(game.runtime.fast_walk_multiplier);
     if (!Number.isFinite(this.walkSpeed) || this.walkSpeed <= 0) throw new Error("walk_speed must be a positive number");
     if (!Number.isFinite(this.fastWalkMultiplier) || this.fastWalkMultiplier < 1) throw new Error("fast_walk_multiplier must be at least 1");
@@ -103,48 +98,13 @@ export class Runtime extends DeterministicVM {
     if (!this.interactive && action !== "cancel" && action !== "dialogue_advance") return;
     if (action === "pointer_primary") return this.action({ type: "pointer", button: 0, point: detail.point, fast: detail.fast });
     if (action === "pointer_secondary") return this.action({ type: "pointer", button: 2, point: detail.point, fast: detail.fast });
-    if (action === "focus_next") return this.moveFocus(1);
-    if (action === "focus_previous") return this.moveFocus(-1);
-    if (action === "inventory_next") return this.moveInventoryFocus(1);
-    if (action === "inventory_previous") return this.moveInventoryFocus(-1);
-    if (action === "activate_primary") return this.activateFocused(false);
-    if (action === "activate_secondary" || action === "verb_look") return action === "verb_look" ? this.selectVerb("look") : this.activateFocused(true);
+    if (action === "verb_look") return this.selectVerb("look");
     if (action.startsWith("verb_")) return this.selectVerb(action.slice(5));
     if (action === "dialogue_advance") { if (this.message) this.dismissMessage(); return; }
     if (action === "cancel") return this.cancelInteraction();
   }
-  selectVerb(verb) { if (this.message) this.dismissMessage(); this.stopWalking(); this.activeVerb = verb; this.firstObject = null; this.updateAccessibility(); }
-  cancelInteraction() { this.clearSelection(); this.interruptCommands(); if (this.message) this.dismissMessage(); this.actionSentence = ""; this.updateAccessibility(); }
-  refreshInteractiveTargets() {
-    const roomTargets = entityRenderOrder(this.entities).filter((entity) => entity.id !== this.game.protocol.player_actor && entityIsInteractive(entity)).map((entity) => ({ id: entity.id, kind: "room" }));
-    const inventoryTargets = this.inventory.filter((id) => id !== this.firstObject).map((id) => ({ id, kind: "inventory" }));
-    const next = [...roomTargets, ...inventoryTargets], focus = reconcileTargetFocus(next, this.focusedTarget, this.focusedTargetIndex);
-    const changed = focus.id !== this.focusedTarget || next.map(({ id }) => id).join("\0") !== this.interactiveTargets.map(({ id }) => id).join("\0");
-    this.interactiveTargets = next; this.focusedTarget = focus.id; this.focusedTargetIndex = focus.index;
-    if (changed) this.updateAccessibility();
-  }
-  moveFocus(delta) {
-    this.refreshInteractiveTargets(); if (!this.interactiveTargets.length) return;
-    this.focusedTargetIndex = (this.focusedTargetIndex + delta + this.interactiveTargets.length) % this.interactiveTargets.length;
-    this.focusedTarget = this.interactiveTargets[this.focusedTargetIndex].id; this.ensureInventoryFocusVisible(); this.updateAccessibility();
-  }
-  moveInventoryFocus(delta) {
-    this.refreshInteractiveTargets(); if (!this.inventory.length) return;
-    let index = this.inventory.indexOf(this.focusedTarget); index = index < 0 ? (delta > 0 ? 0 : this.inventory.length - 1) : (index + delta + this.inventory.length) % this.inventory.length;
-    this.focusedTarget = this.inventory[index]; this.focusedTargetIndex = this.interactiveTargets.findIndex(({ id }) => id === this.focusedTarget); this.ensureInventoryFocusVisible(); this.updateAccessibility();
-  }
-  ensureInventoryFocusVisible() {
-    const index = this.inventory.indexOf(this.focusedTarget); if (index < 0) return;
-    const layout = this.inventoryLayout(), columns = Math.max(1, layout.page.end - layout.page.start || 1); this.inventoryRow = Math.floor(index / columns);
-  }
-  updateAccessibility() {
-    if (!this.accessibilityTargets) return;
-    const selected = this.activeVerb ? `${this.ui[`verb.${this.activeVerb}`]?.label}${this.firstObject ? ` ${this.label(this.firstObject)}` : ""}` : this.phrase("walk_to", { target: "" }).trim();
-    this.accessibilityStatus.textContent = this.phrase("selected_action", { action: selected, target: this.label(this.focusedTarget) || this.ui.accessibility.no_target });
-    this.accessibilityTargets.replaceChildren(...this.interactiveTargets.map(({ id, kind }) => { const option = document.createElement("div"); option.id = `game-target-${id.replace(/[^a-z0-9_-]/gi, "-")}`; option.setAttribute("role", "option"); option.setAttribute("aria-selected", String(id === this.focusedTarget)); option.textContent = `${this.label(id)} (${this.ui.accessibility[`${kind}_target_kind`]})`; return option; }));
-    const ids = [...this.accessibilityTargets.children].map(({ id }) => id); this.canvas.setAttribute("aria-owns", ids.join(" "));
-    const active = this.accessibilityTargets.querySelector('[aria-selected="true"]'); if (active) this.canvas.setAttribute("aria-activedescendant", active.id); else this.canvas.removeAttribute("aria-activedescendant");
-  }
+  selectVerb(verb) { if (this.message) this.dismissMessage(); this.stopWalking(); this.activeVerb = verb; this.firstObject = null; }
+  cancelInteraction() { this.clearSelection(); this.interruptCommands(); if (this.message) this.dismissMessage(); this.actionSentence = ""; }
   settings() {
     const wrapper = document.createElement("div"); wrapper.className = "mobile-settings";
     const button = document.createElement("button"); button.type = "button"; button.textContent = "☰"; button.ariaLabel = "Game menu"; button.ariaExpanded = "false";
@@ -337,7 +297,6 @@ export class Runtime extends DeterministicVM {
   animationDuration(action, facing) { const animation = this.animations[`animation.${action}_${facing || "down"}`]; if (!animation?.frames) return 1; return animation.frames.split(";").reduce((sum, frame) => sum + tuple(frame.trim(), 5, "animation frame")[4], 0); }
   frame(now) { if (now - this.last >= 1000 / integer(this.game.runtime.ticks_per_second, "tick rate")) { this.step(); this.last = now; } this.draw(this.sceneSnapshot()); requestAnimationFrame((time) => this.frame(time)); }
   draw(scene) {
-    this.refreshInteractiveTargets();
     const c = this.ctx, room = this.rooms[scene.room], background = room?.room.background_color || "#000";
     c.fillStyle = background; c.fillRect(0, 0, this.width, this.height);
     c.save(); const [shakeX, shakeY] = shakeOffset(this.shakeTicks, integer(this.game.runtime.shake_amplitude || "2", "shake amplitude")); c.translate(shakeX, shakeY);
@@ -357,16 +316,7 @@ export class Runtime extends DeterministicVM {
     this.textRegion(this.ui.sentence_region, scene.actionSentence || walking || hoverSentence || composing);
     for (const verb of list(this.ui.verb_panel.verbs)) { const spec = this.ui[`verb.${verb}`]; this.panel(spec.rect, spec.label, this.activeVerb === verb); }
     if (this.coarsePointer) this.cursor(this.touchCursor);
-    this.focusIndicator();
     c.restore();
-  }
-  focusIndicator() {
-    if (!this.focusedTarget) return;
-    let rect;
-    const inventoryIndex = this.inventory.indexOf(this.focusedTarget), layout = this.inventoryLayout();
-    if (inventoryIndex >= layout.page.start && inventoryIndex < layout.page.end) rect = [layout.origin[0] + (inventoryIndex - layout.page.start) * layout.itemWidth, layout.origin[1], layout.itemWidth, layout.itemHeight];
-    else if (this.entities[this.focusedTarget]) rect = this.bounds(this.entities[this.focusedTarget]);
-    if (!rect) return; const [x, y, w, h] = rect; this.ctx.save(); this.ctx.strokeStyle = this.ui.palette.active || "#fff"; this.ctx.lineWidth = 2; this.ctx.setLineDash([3, 2]); this.ctx.strokeRect(Math.round(x) - 2, Math.round(y) - 2, Math.round(w) + 4, Math.round(h) + 4); this.ctx.restore();
   }
   label(id) { return (this.inventory.includes(id) ? this.items[id]?.label : this.entities[id]?.label) || this.inventoryEntities[id]?.label || id?.replaceAll("_", " ") || ""; }
   sprite(entity) {

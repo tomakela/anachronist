@@ -105,14 +105,13 @@ selected source rectangle and resolved destination size in snapshots, and emits
 The package interface declaration defines a lower-left verb panel containing,
 in order, `look`, `use`, `take`, `open`, `close`, and `talk`. The inventory panel
 occupies the region immediately to the right of the verbs. Layout is resolved in
-logical display coordinates and published as part of the scene/focus model, so
+logical display coordinates and published as part of the scene model, so
 hosts do not recreate or reposition it independently.
 
 Selecting a verb makes it the active interaction until it is consumed, changed,
 or cancelled. When no verb is active, pointer activation in a room dispatches
 the built-in `walk` action. `walk` is therefore the declared default rather than
-a host-side fallback; actionable accessibility nodes expose the same verb and
-inventory ordering.
+a host-side fallback.
 
 ## 4. VM data model
 

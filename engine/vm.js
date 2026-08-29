@@ -55,7 +55,6 @@ export class DeterministicVM {
   action(event) {
     if (!event || typeof event.type !== "string") throw new TypeError("VM action events require a type");
     if (event.type === "pointer") return this.pointer(event);
-    if (event.type === "activate_focused") return this.activateFocused(event.secondary === true);
     throw new Error(`Unknown VM action ${event.type}`);
   }
   sceneSnapshot() {
@@ -63,16 +62,6 @@ export class DeterministicVM {
       inventoryEntities: this.inventoryEntities, queue: this.queue, message: this.message,
       messageKind: this.messageKind, actionSentence: this.actionSentence, activeVerb: this.activeVerb,
       firstObject: this.firstObject, tick: this.tick, shakeTicks: this.shakeTicks }));
-  }
-  activateFocused(secondary) {
-    this.refreshInteractiveTargets(); const target = this.focusedTarget; if (!target) return;
-    if (this.message) { this.dismissMessage(); return; }
-    if (secondary) { this.clearSelection(); this.perform(this.protocolValue("look_verb"), target); return; }
-    if (!this.activeVerb) { if (this.inventory.includes(target)) return; this.interruptCommands(); this.actionSentence = this.phrase("walk_to", { target: this.label(target) }); if (!this.dispatch("entity.walk", [target])) this.queue = [{ op: "walk", actor: this.protocolValue("player_actor"), target, manual: true }]; return; }
-    if (this.activeVerb === this.protocolValue("use_verb") && !this.firstObject) { this.firstObject = target; this.refreshInteractiveTargets(); return; }
-    if (this.activeVerb === this.protocolValue("use_verb")) { this.interruptCommands(); this.actionSentence = this.verbSentence(this.protocolValue("use_verb"), this.firstObject, target); const commands = this.commands("entity.use_item", [this.firstObject, target]), prepared = commands && prepareItemUse(commands, this, this.vmProtocol); if (prepared) this.queue.push(...prepared); }
-    else this.perform(this.activeVerb, target);
-    this.clearSelection(); this.refreshInteractiveTargets();
   }
   fallbackCommands(verb, args) {
     const target = args.at(-1), localEvent = `entity.fallback_${verb}`;
@@ -117,7 +106,7 @@ export class DeterministicVM {
     // A spawn may deliberately overlap a destination trigger. Treat it as
     // occupied until the player leaves, rather than immediately bouncing back.
     this.occupiedTriggers = enteredTriggers(point, this.triggers).occupied;
-    this.dispatch("room.enter", [id]); this.refreshInteractiveTargets();
+    this.dispatch("room.enter", [id]);
   }
   pointer({ button = 0, point, fast = false }) {
     if (fast && this.queue.length) { this.accelerateCommands(); return; }

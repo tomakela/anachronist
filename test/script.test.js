@@ -7,7 +7,7 @@ import { resolvePackagePath } from "../engine/path.js";
 import { bitmapPixels, loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
 import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
 import { SaveStorage, snapshotRuntime, stableStringify, validateSnapshot } from "../engine/save.js";
-import { parseActionBindings, reconcileTargetFocus } from "../engine/input.js";
+import { parseActionBindings } from "../engine/input.js";
 import { Runtime } from "../engine/bootstrap.js";
 import { DeterministicVM, prepareItemUse } from "../engine/vm.js";
 const ITEM_USE_PROTOCOL = { walk_command: "walk", take_command: "take", player_actor: "player", use_animation: "use" };
@@ -124,13 +124,6 @@ test("input action sections parse keyboard, pointer, and touch bindings", () => 
   assert.equal(bindings.touch.get("tap"), "activate_primary");
   assert.equal(bindings.keyboard.get("Escape"), "cancel");
   assert.throws(() => parseActionBindings(parseIni("[action.a]\nkeyboard_code=Enter\n[action.b]\nkeyboard_code=Enter")), /already bound/);
-});
-
-test("target focus stays on an object or moves predictably when it disappears", () => {
-  assert.deepEqual(reconcileTargetFocus([{ id: "door" }, { id: "key" }], "key", 0), { id: "key", index: 1 });
-  assert.deepEqual(reconcileTargetFocus([{ id: "door" }], "key", 1), { id: "door", index: 0 });
-  assert.deepEqual(reconcileTargetFocus([{ id: "gate" }, { id: "fountain" }], "door", 0), { id: "gate", index: 0 });
-  assert.deepEqual(reconcileTargetFocus([], "door", 0), { id: null, index: -1 });
 });
 
 test("inventory item scripts use an explicit namespace", () => {
@@ -643,6 +636,11 @@ test("browser bootstrap contains no authoritative interaction methods or package
     assert.doesNotMatch(host, new RegExp(`\\n\\s{2}${method}\\(`), `${method} must be VM-owned`);
   }
   assert.doesNotMatch(host, /That doesn't work|rooms\.(?:hall|garden|title)|placeholder\.actor/);
+});
+
+test("browser bootstrap does not maintain or render keyboard target focus", async () => {
+  const host = await readFile(new URL("../engine/bootstrap.js", import.meta.url), "utf8");
+  assert.doesNotMatch(host, /focusedTarget|interactiveTargets|focusIndicator|aria-activedescendant/);
 });
 
 test("VM accepts normalized actions and returns detached immutable snapshots", () => {

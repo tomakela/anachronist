@@ -105,13 +105,12 @@ the positive package value `input.dragging_sensitivity`; long touch maps to the
 same semantic behavior as a secondary mouse click.
 
 Desktop behavior includes mouse buttons, keyboard actions, optional gamepad
-mapping, focus restoration, and context-menu policy. Bindings are declared by
+mapping, and context-menu policy. Bindings are declared by
 the package; the host only converts physical input into declared action IDs.
 
 For the supplied interface, the host renders the VM-published verb controls in
 the lower-left and inventory immediately to their right. With no selected verb,
-room clicks arrive as the VM-declared `walk` action. The DOM accessibility mirror
-uses the identical order and active-verb state.
+room clicks arrive as the VM-declared `walk` action.
 
 ## 6. Input pipeline
 
@@ -125,9 +124,7 @@ Keyboard matching uses `code` or `key` as declared and ignores composition text
 unless a VM text-input request is active. Browser-reserved shortcuts are not
 captured. Synthetic mouse events following touch must be deduplicated.
 
-The VM returns the cursor and focus model. The host renders the declared game
-cursor while maintaining an accessible DOM focus representation for dialogue,
-menus, and actionable hotspots.
+The VM returns the cursor model, and the host renders the declared game cursor.
 
 ## 7. Assets, audio, and loading
 
@@ -159,11 +156,10 @@ Game-defined settings travel through VM events and state.
 
 ## 9. Accessibility
 
-The VM scene includes labels, roles, focus order, live text, subtitles, dialogue
-choices, and actionable bounds. The host mirrors these into semantic HTML while
-the canvas remains visual. DOM controls send ordinary action events; they never
-mutate the game. Keyboard-only operation, screen-reader announcements, reduced
-motion, contrast preferences, and captioning are negotiated capabilities.
+The VM scene includes labels, roles, live text, subtitles, dialogue choices, and
+actionable bounds. DOM controls send ordinary action events; they never mutate
+the game. Screen-reader announcements, reduced motion, contrast preferences, and
+captioning are negotiated capabilities.
 
 Alternative behavior is only enabled when declared by game data. For example,
 reduced animation may select a game-authored animation variant rather than a host
