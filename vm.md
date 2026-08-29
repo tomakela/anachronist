@@ -34,14 +34,15 @@ and may not escape `game/`.
 ```text
 game/
   game.ini                 package and display configuration
+  main.ana                 package-wide initialization
   resources/
     index.ini              logical resource catalogue
     ...                    images, palettes, fonts, audio, and text
   rooms/
     index.ini              room catalogue
-    ...                    room data and room-local scripts
-  scripts/
-    main.ana               package entry script
+    foyer/
+      room.ini             room data
+      script.ana           implicitly foyer-owned handlers
 ```
 
 Catalogue files assign stable logical IDs. Scripts refer to `hero.walk.east` or
@@ -72,7 +73,8 @@ Configuration is loaded in this order:
 
 1. parse and validate `game.ini` without applying host defaults;
 2. load catalogues and verify unique IDs and safe paths;
-3. load room metadata and compile/validate scripts;
+3. compile the package entry script, then load room metadata and compile each
+   room script in deterministic room-catalogue order;
 4. ask the host whether it supports the requested capabilities; and
 5. either start atomically or return all validation errors.
 

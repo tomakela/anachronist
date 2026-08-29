@@ -1,0 +1,104 @@
+on enter() {
+    if game.door_open == true {
+        set door.open = true
+        set door.graphic = placeholder.door_open
+    }
+    if game.clock_fallen == true {
+        hide clock
+        if game.fallen_clock_taken == false {
+            show fallen_clock
+        } else {
+            hide fallen_clock
+        }
+    }
+    if game.key_taken == true {
+        hide key
+    }
+}
+
+on door.walk() {
+    walk player to door
+    if game.door_open == true {
+        enter room garden at entry
+    }
+}
+
+on trigger.enter(region) {
+    if region == garden {
+      if game.door_open == true {
+        enter room garden at entry
+      }
+    }
+}
+
+on clock.take() {
+    walk player to clock
+    hide clock
+    show fallen_clock
+    set game.clock_fallen = true
+    shake 24 ticks
+    say "Ooops"
+}
+
+on fallen_clock.take() {
+    walk player to fallen_clock
+    take fallen_clock
+    set game.fallen_clock_taken = true
+    say "Taken."
+}
+
+on key.take() {
+    walk player to key
+    take key
+    set game.key_taken = true
+    say "Taken."
+}
+
+on door.use_item(item) {
+    if item == key {
+        sequence {
+            walk player to key
+            take key
+            set game.key_taken = true
+            walk player to door
+            set door.open = true
+            set door.graphic = placeholder.door_open
+            set game.door_open = true
+            set game.door_unlocked = true
+            say "The key turns in the lock."
+        }
+    } else {
+        say "I can't do that."
+    }
+}
+
+on door.open() {
+    if game.door_unlocked == true {
+        walk player to door
+        set door.open = true
+        set door.graphic = placeholder.door_open
+        set game.door_open = true
+    } else {
+        say "It is locked."
+    }
+}
+
+on door.close() {
+    if game.door_open == true {
+        walk player to door
+        set door.open = false
+        set door.graphic = placeholder.door
+        set game.door_open = false
+    }
+}
+
+on bush.look() {
+    if game.stick_found == false {
+        take stick
+        set game.stick_found = true
+        say "Found a stick"
+    } else {
+        say "There is nothing else in the bush."
+    }
+}
+

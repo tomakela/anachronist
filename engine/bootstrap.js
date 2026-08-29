@@ -20,10 +20,15 @@ async function boot() {
   const graphics = parseIni(await fetchText(resolvePackagePath(resourceBase, graphicsPath)));
   const animations = parseIni(await fetchText(resolvePackagePath(resourceBase, resources.catalogue.player_animations)));
   const bitmaps = await loadBitmaps(graphics, resourceBase);
-  const script = compile(await fetchText(resolvePackagePath(base, game.package.entry_script)));
+  const handlers = compile(await fetchText(resolvePackagePath(base, game.package.entry_script)));
   const rooms = Object.create(null);
-  for (const id of list(roomsIndex.catalogue.rooms)) rooms[id] = parseIni(await fetchText(resolvePackagePath(base, roomsIndex[`room.${id}`].path)));
-  new Runtime(game, ui, rooms, graphics, animations, bitmaps, script).start();
+  for (const id of list(roomsIndex.catalogue.rooms)) {
+    const spec = roomsIndex[`room.${id}`];
+    rooms[id] = parseIni(await fetchText(resolvePackagePath(base, spec.path)));
+    const entities = Object.keys(rooms[id]).filter((section) => section.startsWith("entity.")).map((section) => section.slice(7));
+    handlers.push(...compile(await fetchText(resolvePackagePath(base, spec.script)), { roomId: id, entities }));
+  }
+  new Runtime(game, ui, rooms, graphics, animations, bitmaps, handlers).start();
 }
 
 class Runtime {
@@ -69,8 +74,9 @@ class Runtime {
     wrapper.append(button, choices); return wrapper;
   }
   scriptState() { return { game: this.globals }; }
-  dispatch(event, args) { const handler = this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length); if (!handler) return 0; const commands = instantiate(handler, args, this.scriptState()); this.queue.push(...commands); return commands.length; }
-  commands(event, args) { const handler = this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length); return handler ? instantiate(handler, args, this.scriptState()) : null; }
+  matchingHandler(event, args) { return this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length && (!candidate.roomId || candidate.roomId === this.room || event === "room.enter") && (!candidate.localTarget || candidate.localTarget === args.at(-1))); }
+  dispatch(event, args) { const handler = this.matchingHandler(event, args); if (!handler) return 0; const commands = instantiate(handler, args, this.scriptState()); this.queue.push(...commands); return commands.length; }
+  commands(event, args) { const handler = this.matchingHandler(event, args); return handler ? instantiate(handler, args, this.scriptState()) : null; }
   enter(id, spawn) {
     const room = this.rooms[id]; if (!room) throw new Error(`Unknown room ${id}`); this.room = id;
     this.playerScaling = parseScalingStops(room.room.player_scaling, `${id}.room.player_scaling`);
