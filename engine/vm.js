@@ -129,6 +129,10 @@ export class DeterministicVM {
     if (selectedVerb) { this.stopWalking(); this.activeVerb = selectedVerb; this.firstObject = null; return; }
     const target = this.targetAt(x, y);
     if (interfacePoint(x, y, this.ui, this.width, this.height) && !target) return;
+    if (button === 2) {
+      if (target) { this.clearSelection(); this.perform(this.protocolValue("look_verb"), target); }
+      return;
+    }
     if (!this.activeVerb && this.inventory.includes(target)) return;
     if (!this.activeVerb) {
       this.interruptCommands(); this.actionSentence = this.phrase("walk_to", { target: target ? this.label(target) : "" }).trim();
