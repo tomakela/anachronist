@@ -13,9 +13,14 @@ const pixelCanvas = (width, height, values) => () => {
 };
 
 test("a handler is fully expanded into an ordered command chain", () => {
-  const [handler] = compile(`module demo; on entity.use_item(item, target) {
-    if (item == key) { sequence { walk player to key; take key; walk player to target; say "Open"; } }
-    else { say "No"; }
+  const [handler] = compile(`on entity.use_item(item, target) {
+    if (item == key) { sequence { walk player to key
+ take key
+ walk player to target
+ say "Open"
+ } }
+    else { say "No"
+ }
   }`);
   assert.deepEqual(instantiate(handler, ["key", "door"]).map(({ op, target }) => [op, target]), [
     ["walk", "key"], ["take", "key"], ["walk", "door"], ["say", undefined]
@@ -25,10 +30,45 @@ test("a handler is fully expanded into an ordered command chain", () => {
 
 test("handlers can branch on game-global state", () => {
   const [handler] = compile(`on room.enter() {
-    if (game.key_taken == true) { hide key; }
+    if (game.key_taken == true) { hide key
+ }
   }`);
   assert.deepEqual(instantiate(handler, [], { game: { key_taken: true } }).map(({ op, target }) => [op, target]), [["hide", "key"]]);
   assert.deepEqual(instantiate(handler, [], { game: { key_taken: false } }), []);
+});
+
+test("newlines terminate statements while comments and blank lines remain harmless", () => {
+  const [handler] = compile(`// heading
+
+on game.start() {
+  // before the first command
+  say "one" // trailing comment
+
+  if true {
+    say "two"
+  }
+}`);
+  assert.deepEqual(instantiate(handler, []).map(({ value }) => value), ["one", "two"]);
+});
+
+test("semicolons, module declarations, and multiple statements on one line are rejected", () => {
+  assert.throws(() => compile("on game.start() { say \"no\"; }") , /semicolons are invalid/);
+  assert.throws(() => compile("module demo\n"), /module declarations are not supported/);
+  assert.throws(() => compile("on game.start() { say \"one\" say \"two\"\n}"), /expected newline or }/);
+});
+
+test("room-local handlers lower with ownership, guards, and optional if parentheses", () => {
+  const handlers = compile(`on enter() {
+  if game.clock_fallen { hide clock }
+}
+on door.open() {
+  show door
+}`, { roomId: "hall", entities: ["clock", "door"] });
+  assert.deepEqual(handlers.map(({ event, roomId, localTarget }) => [event, roomId, localTarget]), [
+    ["room.enter", "hall", undefined], ["entity.open", "hall", "door"]
+  ]);
+  assert.deepEqual(instantiate(handlers[0], ["garden"], { game: { clock_fallen: true } }), []);
+  assert.throws(() => compile("on missing.open() {\n}\n", { roomId: "hall", entities: ["door"] }), /unknown local entity missing/);
 });
 
 test("INI parser rejects duplicate package values", () => {
@@ -95,8 +135,11 @@ test("the demo graphic catalogue requests images before using base64 fallbacks",
 
 test("using the key on a non-door does not enqueue a walk", () => {
   const source = `on entity.use_item(item, target) {
-    if (target == door) { if (item == key) { walk player to door; } else { say "No"; } }
-    else { say "I can't do that"; }
+    if (target == door) { if (item == key) { walk player to door
+ } else { say "No"
+ } }
+    else { say "I can't do that"
+ }
   }`;
   const commands = instantiate(compile(source)[0], ["key", "clock"]);
   assert.deepEqual(commands.map(({ op }) => op), ["say"]);
@@ -109,7 +152,7 @@ test("dialogue duration is configured from character count", () => {
 });
 
 test("shake commands compile with a deterministic screen offset", () => {
-  const [command] = instantiate(compile("on room.enter() { shake 24 ticks; }")[0], []);
+  const [command] = instantiate(compile("on room.enter() { shake 24 ticks\n }")[0], []);
   assert.deepEqual(command, { op: "shake", ticks: 24, value: undefined });
   assert.deepEqual([1, 2, 3, 4].map((ticks) => shakeOffset(ticks, 2)), [[2, 0], [0, -2], [0, 2], [-2, 0]]);
   assert.deepEqual(shakeOffset(0, 2), [0, 0]);
@@ -127,7 +170,11 @@ test("the configured verb sentences use only the intended prepositions", async (
 
 test("ground item use walks, takes, approaches, and uses in order", () => {
   const commands = instantiate(compile(`on entity.use_item(item, target) {
-    walk player to item; take item; walk player to target; set door.open = true;
+    walk player to item
+ take item
+ walk player to target
+ set door.open = true
+
   }`)[0], ["key", "door"]);
   const world = { inventory: [], entities: {
     player: { visible: "true" }, key: { visible: "true" }, door: { visible: "true" }
@@ -139,7 +186,11 @@ test("ground item use walks, takes, approaches, and uses in order", () => {
 
 test("inventory item use never returns to the item's former room position", () => {
   const commands = instantiate(compile(`on entity.use_item(item, target) {
-    walk player to item; take item; walk player to target; say "Used";
+    walk player to item
+ take item
+ walk player to target
+ say "Used"
+
   }`)[0], ["key", "door"]);
   const world = { inventory: ["key"], entities: {
     player: { visible: "true" }, key: { visible: "false" }, door: { visible: "true" }
@@ -235,16 +286,16 @@ test("walk masks scale bitmap pixels and allow only visible non-black areas", ()
 });
 
 test("taking the wall clock creates the persistent fallen-clock scene", async () => {
-  const handlers = compile(await readFile(new URL("../game/scripts/main.ana", import.meta.url), "utf8"));
-  const handler = (event) => handlers.find((candidate) => candidate.event === event);
-  assert.deepEqual(instantiate(handler("entity.take"), ["clock"], { game: {} }).map(({ op, target, value }) => [op, target, value]), [
+  const handlers = compile(await readFile(new URL("../game/rooms/hall/script.ana", import.meta.url), "utf8"), { roomId: "hall", entities: ["door", "clock", "fallen_clock", "key", "bush", "stick"] });
+  const handler = (event, target) => handlers.find((candidate) => candidate.event === event && (!target || candidate.localTarget === target));
+  assert.deepEqual(instantiate(handler("entity.take", "clock"), ["clock"], { game: {} }).map(({ op, target, value }) => [op, target, value]), [
     ["walk", "clock", undefined], ["hide", "clock", undefined], ["show", "fallen_clock", undefined],
     ["set", "game.clock_fallen", true], ["shake", undefined, undefined], ["say", undefined, "Ooops"]
   ]);
   assert.deepEqual(instantiate(handler("room.enter"), ["hall"], { game: { door_open: false, clock_fallen: true, fallen_clock_taken: false } }).map(({ op, target }) => [op, target]), [
     ["hide", "clock"], ["show", "fallen_clock"]
   ]);
-  assert.deepEqual(instantiate(handler("entity.take"), ["fallen_clock"], { game: { clock_fallen: true, fallen_clock_taken: false } }).map(({ op, target, value }) => [op, target, value]), [
+  assert.deepEqual(instantiate(handler("entity.take", "fallen_clock"), ["fallen_clock"], { game: { clock_fallen: true, fallen_clock_taken: false } }).map(({ op, target, value }) => [op, target, value]), [
     ["walk", "fallen_clock", undefined], ["take", "fallen_clock", undefined],
     ["set", "game.fallen_clock_taken", true], ["say", undefined, "Taken."]
   ]);
@@ -255,7 +306,7 @@ test("taking the wall clock creates the persistent fallen-clock scene", async ()
 });
 
 test("the demo door can close, reopen, and be walked through", async () => {
-  const handlers = compile(await readFile(new URL("../game/scripts/main.ana", import.meta.url), "utf8"));
+  const handlers = compile(await readFile(new URL("../game/rooms/hall/script.ana", import.meta.url), "utf8"), { roomId: "hall", entities: ["door", "clock", "fallen_clock", "key", "bush", "stick"] });
   const handler = (event) => handlers.find((candidate) => candidate.event === event);
   assert.deepEqual(instantiate(handler("entity.close"), ["door"], { game: { door_open: true } }).map(({ op, target }) => [op, target]), [
     ["walk", "door"], ["set", "door.open"], ["set", "door.graphic"], ["set", "game.door_open"]

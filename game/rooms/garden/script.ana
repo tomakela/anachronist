@@ -1,0 +1,9 @@
+on gate.walk() {
+    walk player to gate
+    enter room hall at garden
+}
+
+on fountain.look() {
+    say "That looks interesting."
+    say "There may be more to discover here."
+}

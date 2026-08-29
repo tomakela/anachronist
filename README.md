@@ -20,6 +20,12 @@ graphics dimensions/animation metadata and the verb/inventory interface. The roo
 [`index.html`](index.html) is intentionally only a host boot document; it contains
 no room, object, asset, resolution, palette, or interaction constants.
 
+The package entry script is `game/main.ana`. Each room has a directory containing
+`room.ini` data and an implicitly room-owned `script.ana`. The catalogue order is
+also the deterministic handler merge order. Scripts end simple statements at a
+newline or closing brace, reject semicolons, have no `module` declaration, and
+support room-local forms such as `on enter()` and `on door.open()`.
+
 ## Running the demo
 
 Serve the repository over HTTP (for example, `python3 -m http.server 8000`) and

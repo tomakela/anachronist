@@ -14,31 +14,25 @@ visual content and game-specific declarations will be added later.
 - serializable execution state so saves can include suspended scenes; and
 - no implicit access to platform APIs or undeclared game data.
 
-Source is UTF-8. Blocks use braces, statements end with semicolons, `//` starts a
-line comment, and identifiers are case-sensitive. Formatting has no semantic
-meaning.
+Source is UTF-8. Blocks use braces and `//` starts a line comment. A physical
+newline (or a closing brace) terminates a simple statement; blank lines and
+comments do not. Semicolons are invalid, and two simple statements cannot share
+a line. Newlines inside parenthesized delimiter lists are only formatting.
 
-## 2. Modules and declarations
+## 2. Package and room scripts
 
 ```ana
-module game.main;
-
-import room foyer;
-import resource hero_idle;
-
-state game {
-    bool introduction_seen = false;
-    int score = 0;
-}
-
 on game.start() {
-    enter room foyer at foyer.spawn.entry;
+    enter room foyer at entry
 }
 ```
 
-Imports are logical catalogue references, not paths. A compiler resolves and
-type-checks them when the package loads. Top-level declarations are `module`,
-`import`, `const`, `state`, `fn`, `event`, and `on`.
+There is no `module` declaration: catalogue entries own source files. The
+package entry script contains package-wide initialization. Room scripts have an
+implicit room context: `on enter()` lowers to guarded `room.enter`, and
+`on door.open()` lowers to `entity.open` with local target `door`. Loading
+rejects unknown or ambiguous local entity names. Parentheses around `if`
+conditions are optional.
 
 State must be explicitly scoped as `game`, `room`, or `entity`. Ordinary local
 variables use `let` and disappear when their call finishes unless captured by a
@@ -203,7 +197,7 @@ only at the beginning of a module.
 ## 11. Normative grammar
 
 ```ebnf
-module        = "module", qualified_id, ";", { declaration } ;
+source        = { handler } ;
 declaration   = import | constant | state | function | event | handler ;
 import        = "import", ("room"|"resource"|"module"), qualified_id, ";" ;
 constant      = "const", id, [ ":", type ], "=", expression, ";" ;
@@ -226,7 +220,7 @@ statement     = let | set | if | match | while | for | break | continue |
 sequence      = "sequence", block ;
 let           = "let", id, [ ":", type ], "=", expression, ";" ;
 set           = "set", assignable, "=", expression, ";" ;
-if            = "if", "(", expression, ")", block, [ "else", (block|if) ] ;
+if            = "if", [ "(" ], expression, [ ")" ], block, [ "else", (block|if) ] ;
 while         = "while", "(", expression, ")", block ;
 for           = "for", id, "in", expression, block ;
 return        = "return", [ expression ], ";" ;
