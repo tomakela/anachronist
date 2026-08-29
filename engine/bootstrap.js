@@ -2,7 +2,7 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { loadBitmaps } from "./bitmaps.js";
-import { bitmapWalkRegion, dragCursor, enteredTriggers, entityRenderOrder, interfacePoint, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
+import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
 
 const root = document.querySelector("#engine-host");
 const entry = document.querySelector('meta[name="game-entry"]')?.content;
@@ -69,6 +69,7 @@ class Runtime {
     root.addEventListener("pointermove", (event) => this.pointerMove(event));
     root.addEventListener("pointerup", (event) => this.pointerUp(event));
     root.addEventListener("pointercancel", (event) => this.cancelTouch(event));
+    root.addEventListener("lostpointercapture", (event) => this.cancelTouch(event));
     this.canvas.addEventListener("pointerleave", () => { this.hoverTarget = null; });
     this.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     this.canvas.addEventListener("keydown", (event) => { if (event.key === "Escape") this.clearSelection(); });
@@ -128,7 +129,7 @@ class Runtime {
   hover(event) { const [x, y] = this.eventPoint(event); this.updateHover(x, y); }
   updateHover(x, y) {
     const target = this.targetAt(x, y);
-    this.hoverTarget = interfacePoint(x, y, this.ui, this.width, this.height) && !this.activeVerb ? null : target;
+    this.hoverTarget = interfacePoint(x, y, this.ui, this.width, this.height) && !this.activeVerb && !this.inventory.includes(target) ? null : target;
   }
   pointerDown(event) {
     if (event.target.closest?.(".mobile-settings")) return;
@@ -137,7 +138,7 @@ class Runtime {
     if (this.touch) return;
     event.preventDefault(); root.setPointerCapture(event.pointerId);
     const point = this.eventPoint(event); if (this.cursorMode === "direct") this.touchCursor = point;
-    this.touch = { id: event.pointerId, start: point, last: point, moved: false, long: false };
+    this.touch = { id: event.pointerId, start: point, last: point, moved: false, long: false, startedAt: performance.now() };
     const pointerId = event.pointerId;
     this.touch.timer = setTimeout(() => { if (this.touch?.id !== pointerId || this.touch.moved) return; this.touch.long = true; this.pointer(event, 2, this.touchCursor); }, this.longTouchMilliseconds);
   }
@@ -152,7 +153,13 @@ class Runtime {
   }
   pointerUp(event) {
     if (event.pointerType !== "touch" || !this.touch || this.touch.id !== event.pointerId) return;
-    clearTimeout(this.touch.timer); if (!this.touch.long && !this.touch.moved) this.pointer(event, 0, this.touchCursor); this.touch = null;
+    clearTimeout(this.touch.timer);
+    if (!this.touch.long && !this.touch.moved) {
+      const button = performance.now() - this.touch.startedAt >= this.longTouchMilliseconds ? 2 : 0;
+      this.touch.long = button === 2;
+      this.pointer(event, button, this.touchCursor);
+    }
+    this.touch = null;
   }
   cancelTouch(event) { if (this.touch?.id === event.pointerId) { clearTimeout(this.touch.timer); this.touch = null; } }
   pointer(event, button = event.button, point = this.eventPoint(event)) {
@@ -209,7 +216,7 @@ class Runtime {
   targetAt(x, y) {
     const layout = this.inventoryLayout();
     const inventoryTarget = this.inventory.slice(layout.page.start, layout.page.end).find((id, i) => id !== this.firstObject && inside(x, y, [layout.origin[0] + i * layout.itemWidth, layout.origin[1], layout.itemWidth, layout.itemHeight]));
-    return inventoryTarget || entityRenderOrder(this.entities).reverse().find((entity) => entity.id !== "player" && entity.id !== this.firstObject && entity.visible !== "false" && inside(x, y, this.bounds(entity)))?.id;
+    return inventoryTarget || entityRenderOrder(this.entities).reverse().find((entity) => entity.id !== "player" && entity.id !== this.firstObject && entityIsInteractive(entity) && inside(x, y, this.bounds(entity)))?.id;
   }
   inventoryLayout() {
     const spec = this.ui.inventory_panel, origin = tuple(spec.origin, 2, "inventory"), itemWidth = integer(spec.item_width, "item width"), itemHeight = integer(spec.item_height, "item height"), arrowWidth = integer(spec.arrow_width || "16", "arrow width");
@@ -257,7 +264,7 @@ class Runtime {
     this.textRegion(this.ui.message_region, this.messageKind === "narrate" ? this.message : "");
     if (this.messageKind === "say") this.speech(this.entities.player, this.message);
     const hoverTarget = this.hoverTarget === this.firstObject ? null : this.hoverTarget;
-    const hoverSentence = hoverTarget ? (this.activeVerb ? this.verbSentence(this.activeVerb, this.firstObject || hoverTarget, this.firstObject ? hoverTarget : null) : `Walk to ${this.label(hoverTarget)}`) : "";
+    const hoverSentence = hoverTarget ? (this.activeVerb ? this.verbSentence(this.activeVerb, this.firstObject || hoverTarget, this.firstObject ? hoverTarget : null) : (this.inventory.includes(hoverTarget) ? this.label(hoverTarget) : `Walk to ${this.label(hoverTarget)}`)) : "";
     const composing = this.activeVerb ? [title(this.activeVerb), this.firstObject && this.label(this.firstObject), this.firstObject && this.ui[`verb.${this.activeVerb}`]?.object_preposition].filter(Boolean).join(" ") : "";
     const walking = this.queue[0]?.op === "walk" ? `Walk to ${this.label(this.queue[0].target)}` : "";
     this.textRegion(this.ui.sentence_region, this.actionSentence || walking || hoverSentence || composing);

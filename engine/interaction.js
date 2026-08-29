@@ -147,12 +147,17 @@ export function interpolatedScale(y, stops) {
   return stops.at(-1)[1];
 }
 
-/** Sort scenery and actors back-to-front. Explicit depth wins; y is the default. */
+/** Sort scenery and actors back-to-front using explicit, stable z layers. */
 export function entityRenderOrder(entities) {
   return Object.values(entities).sort((a, b) => {
-    const depth = (entity) => entity.depth === undefined ? entity.position[1] : Number(entity.depth);
-    return depth(a) - depth(b) || a.id.localeCompare(b.id);
+    const z = (entity) => entity.z === undefined ? (entity.id === "player" ? 100 : 0) : Number(entity.z);
+    return z(a) - z(b) || a.id.localeCompare(b.id);
   });
+}
+
+/** Whether a visible entity participates in pointing and verb interactions. */
+export function entityIsInteractive(entity) {
+  return entity?.visible !== "false" && entity?.interactive !== "false";
 }
 
 /** Turn a black/transparent bitmap mask into a logical-room point predicate. */
