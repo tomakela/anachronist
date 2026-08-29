@@ -5,7 +5,7 @@ import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
-import { bitmapWalkRegion, dragCursor, enteredTriggers, entityRenderOrder, interfacePoint, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
+import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
 
 const pixelCanvas = (width, height, values) => () => {
   const image = { data: new Uint8ClampedArray(values) };
@@ -287,12 +287,18 @@ test("room perspective scaling interpolates and clamps between y stops", () => {
   assert.throws(() => parseScalingStops("100,1"), /at least two stops/);
 });
 
-test("entities use explicit depth or foot position for back-to-front ordering", () => {
+test("entities use explicit z values and type defaults for back-to-front ordering", () => {
   const entities = {
-    player: { id: "player", position: [0, 80] }, foreground: { id: "foreground", position: [0, 100] },
-    backdrop: { id: "backdrop", position: [0, 150], depth: "10" }
+    player: { id: "player", position: [0, 10] }, foreground: { id: "foreground", position: [0, 0], z: "150" },
+    backdrop: { id: "backdrop", position: [0, 190] }
   };
   assert.deepEqual(entityRenderOrder(entities).map(({ id }) => id), ["backdrop", "player", "foreground"]);
+});
+
+test("non-interactive entities remain visible but are not interaction targets", () => {
+  assert.equal(entityIsInteractive({ visible: "true", interactive: "false" }), false);
+  assert.equal(entityIsInteractive({ visible: "false" }), false);
+  assert.equal(entityIsInteractive({ visible: "true" }), true);
 });
 
 test("walk masks scale bitmap pixels and allow only visible non-black areas", () => {
