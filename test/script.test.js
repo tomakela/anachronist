@@ -4,9 +4,13 @@ import { readFile } from "node:fs/promises";
 import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
+import { bitmapPixels, loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
+import { bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
 import { loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
+import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
 import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
 import { parseActionBindings, reconcileTargetFocus } from "../engine/input.js";
+import { Runtime } from "../engine/bootstrap.js";
 
 const pixelCanvas = (width, height, values) => () => {
   const image = { data: new Uint8ClampedArray(values) };
@@ -176,6 +180,32 @@ test("a catalogue transparent color clears only exactly matching pixels", () => 
   assert.throws(() => transparentBitmap({ width: 1, height: 1 }, "magenta", factory), /expected #RRGGBB/);
 });
 
+test("alpha hits cache pixels and use the current frame", () => {
+  let reads = 0;
+  const factory = () => ({ getContext: () => ({ drawImage() {}, getImageData() { reads++; return { data: new Uint8ClampedArray([0,0,0,0, 1,1,1,255, 1,1,1,255, 0,0,0,0]) }; } }) });
+  const bitmap = { width: 4, height: 1 }, pixels = bitmapPixels(bitmap, factory);
+  assert.equal(bitmapPixels(bitmap, factory), pixels); assert.equal(reads, 1);
+  assert.equal(spriteAlphaHit([15, 15], [10, 10, 20, 10], [0, 0, 2, 1], pixels), false);
+  assert.equal(spriteAlphaHit([15, 15], [10, 10, 20, 10], [2, 0, 2, 1], pixels), true);
+});
+
+test("explicit polygon hotspots are independent of sprite bounds", () => {
+  const hotspot = entityHotspot({ id: "door", hotspot_polygon: "0,0; 20,0; 10,20" });
+  assert.equal(pointInHotspot([10, 5], hotspot), true); assert.equal(pointInHotspot([19, 19], hotspot), false);
+});
+
+test("target selection uses z order and priority while ignoring decorations", () => {
+  const entities = { low: { id: "low", z: "1" }, high: { id: "high", z: "2" }, decor: { id: "decor", z: "9", interactive: "false" } };
+  assert.equal(entityTargetAt([0, 0], entities, () => true), "high"); entities.low.hotspot_priority = "3";
+  assert.equal(entityTargetAt([0, 0], entities, () => true), "low");
+});
+
+test("alpha coordinates respect scaled and origin-shifted bounds", () => {
+  const pixels = { width: 2, height: 1, data: new Uint8ClampedArray([0,0,0,0, 0,0,0,255]) }, bounds = [80, 50, 40, 20];
+  assert.equal(spriteAlphaHit([85, 60], bounds, [0, 0, 2, 1], pixels), false);
+  assert.equal(spriteAlphaHit([115, 60], bounds, [0, 0, 2, 1], pixels), true);
+});
+
 test("the demo graphic catalogue requests images before using base64 fallbacks", async () => {
   const graphics = parseIni(await readFile(new URL("../game/resources/graphics.ini", import.meta.url), "utf8"));
   for (const [section, spec] of Object.entries(graphics)) {
@@ -257,6 +287,53 @@ test("an invalid item-use tail rejects the entire transaction", () => {
   const commands = [{ op: "walk", actor: "player", target: "key" }, { op: "take", target: "key" }, { op: "walk", actor: "player", target: "missing" }];
   const world = { inventory: [], entities: { player: { visible: "true" }, key: { visible: "true" } }, rooms: {} };
   assert.equal(prepareItemUse(commands, world), null);
+});
+
+const fallbackRuntime = (handlers = []) => {
+  const runtime = Object.create(Runtime.prototype);
+  Object.assign(runtime, {
+    handlers, room: "hall", queue: [], globals: {}, roomState: { hall: {} }, inventory: [],
+    entities: { player: { moving: false }, door: { label: "painted door", visible: "true" }, key: { label: "brass key", visible: "true" } },
+    inventoryEntities: {}, rooms: {}, ui: {
+      verb_panel: { verbs: "" },
+      "verb.open": { label: "Open", rect: "0,0,0,0" }, "verb.use": { label: "Use", object_preposition: "on", rect: "0,0,0,0" },
+      "fallback.open": { text: "No opening {target}." },
+      "fallback.use_item": { text: "No {first} with {second}." }
+    }
+  });
+  return runtime;
+};
+
+test("unsupported single-object verbs enqueue their configured narration", () => {
+  const runtime = fallbackRuntime();
+  runtime.perform("open", "door");
+  assert.deepEqual(runtime.queue, [{ op: "narrate", value: "No opening painted door." }]);
+});
+
+test("invalid item combinations interpolate both configured labels", () => {
+  const runtime = fallbackRuntime();
+  runtime.enqueueFallback("use_item", ["key", "door"]);
+  assert.deepEqual(runtime.queue, [{ op: "narrate", value: "No brass key with painted door." }]);
+});
+
+test("a rejected item transaction narrates without walking or animating", () => {
+  const handler = compile(`on entity.use_item(item, target) { walk player to missing\n }`)[0];
+  const runtime = fallbackRuntime([handler]);
+  Object.assign(runtime, { interactive: true, activeVerb: "use", firstObject: "key", actionSentence: "", hoverTarget: null });
+  runtime.inventoryLayout = () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} });
+  runtime.targetAt = () => "door";
+  runtime.pointer({ preventDefault() {}, button: 0 }, 0, [10, 10]);
+  assert.deepEqual(runtime.queue, [{ op: "narrate", value: "No brass key with painted door." }]);
+});
+
+test("entity and room fallback scripts override generic narration in order", () => {
+  const game = compile(`on fallback.open(target) { narrate "game"\n }`);
+  const room = compile(`on fallback.open(target) { narrate "room"\n }`, { roomId: "hall", entities: ["door"] });
+  const entity = compile(`on door.fallback_open() { narrate "entity"\n }`, { roomId: "hall", entities: ["door"] });
+  const runtime = fallbackRuntime([...game, ...room, ...entity]);
+  assert.equal(runtime.fallbackCommands("open", ["door"])[0].value, "entity");
+  runtime.handlers = [...game, ...room];
+  assert.equal(runtime.fallbackCommands("open", ["door"])[0].value, "room");
 });
 
 test("triggers fire only when crossing into their region", () => {
@@ -397,4 +474,49 @@ test("the demo door can close, reopen, and be walked through", async () => {
   assert.deepEqual(instantiate(handler("entity.walk"), ["door"], { game: { door_open: true } }).map(({ op, target, room }) => [op, target, room]), [
     ["walk", "door", undefined], ["enter", undefined, "garden"]
   ]);
+});
+
+test("skippable handlers attach explicit metadata to every ordered command", () => {
+  const [handler] = compile(`on room.enter() skippable {
+ wait 20 ticks
+ set game.seen = true
+ shake 8 ticks
+ enter room hall at door
+}`);
+  const commands = instantiate(handler, []);
+  assert.equal(handler.skippable, true);
+  assert.deepEqual(commands.map(({ op }) => op), ["wait", "set", "shake", "enter"]);
+  assert.ok(commands.every(({ skippable }) => skippable));
+  assert.equal(compile('on game.start() {\n set game.ready = true\n}')[0].skippable, false);
+});
+
+test("fast walking samples masks and triggers instead of jumping over them", () => {
+  const visited = [];
+  const result = advanceWalk([0, 0], [20, 0], 2, 10, ([x]) => x < 9, (point) => visited.push(point[0]));
+  assert.deepEqual(result, { point: [8, 0], reached: false, blocked: true });
+  assert.deepEqual(visited, [2, 4, 6, 8]);
+});
+
+test("fast exit traversal observes a narrow trigger boundary", () => {
+  const triggers = { exit: [5, -1, 2, 2] }, entered = [];
+  let occupied = new Set();
+  const result = advanceWalk([0, 0], [12, 0], 1, 12, () => true, (point) => {
+    const state = enteredTriggers(point, triggers, occupied); occupied = state.occupied; entered.push(...state.entered);
+  });
+  assert.equal(result.reached, true);
+  assert.deepEqual(entered, ["exit"]);
+});
+
+test("cut-scene skipping retains persistent mutations and transitions in order", () => {
+  const queue = [
+    { op: "wait", skippable: true }, { op: "set", target: "game.key", value: true, skippable: true },
+    { op: "say", skippable: true }, { op: "hide", target: "key", skippable: true },
+    { op: "enter", room: "hall", skippable: true }, { op: "set", target: "game.puzzle", value: true }
+  ];
+  assert.equal(accelerateCommandQueue(queue), true);
+  assert.deepEqual(queue.filter(({ skipPresentation }) => skipPresentation).map(({ op }) => op), ["wait", "set", "say", "hide", "enter"]);
+  assert.deepEqual(queue.filter(({ op }) => ["set", "hide", "enter"].includes(op)).map(({ op, target }) => [op, target]), [
+    ["set", "game.key"], ["hide", "key"], ["enter", undefined], ["set", "game.puzzle"]
+  ]);
+  assert.equal(queue.at(-1).fast, undefined, "the following non-skippable puzzle boundary is untouched");
 });

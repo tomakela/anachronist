@@ -1,12 +1,15 @@
 import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
+import { bitmapPixels, loadBitmaps } from "./bitmaps.js";
+import { bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
 import { loadBitmaps } from "./bitmaps.js";
 import { parseActionBindings, reconcileTargetFocus } from "./input.js";
 import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
+import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
 
-const root = document.querySelector("#engine-host");
-const entry = document.querySelector('meta[name="game-entry"]')?.content;
+const root = typeof document === "undefined" ? null : document.querySelector("#engine-host");
+const entry = typeof document === "undefined" ? null : document.querySelector('meta[name="game-entry"]')?.content;
 const fetchText = async (path) => { const response = await fetch(path); if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`); return response.text(); };
 
 async function boot() {
@@ -46,6 +49,9 @@ async function boot() {
 class Runtime {
   constructor(game, ui, rooms, items, graphics, animations, bitmaps, handlers, input) {
     Object.assign(this, { game, ui, rooms, items, graphics, animations, bitmaps, handlers, input });
+export class Runtime {
+  constructor(game, ui, rooms, items, graphics, animations, bitmaps, handlers) {
+    Object.assign(this, { game, ui, rooms, items, graphics, animations, bitmaps, handlers });
     this.entities = Object.create(null); this.roomEntities = Object.create(null); this.inventory = []; this.inventoryEntities = Object.create(null); this.globals = { ...game.$variables };
     this.roomState = Object.fromEntries(Object.entries(rooms).map(([id, room]) => [id, { ...room.$variables }]));
     this.activeVerb = null; this.firstObject = null; this.hoverTarget = null; this.queue = []; this.message = ""; this.messageKind = ""; this.messageTicks = 0; this.actionSentence = ""; this.tick = 0; this.shakeTicks = 0; this.inventoryRow = 0;
@@ -67,6 +73,14 @@ class Runtime {
     this.accessibilityStatus = document.createElement("p"); this.accessibilityStatus.setAttribute("aria-live", "polite");
     this.accessibilityTargets = document.createElement("div"); this.accessibilityTargets.setAttribute("role", "listbox"); this.accessibility.append(this.accessibilityStatus, this.accessibilityTargets);
     root.replaceChildren(this.canvas, this.accessibility, this.settings()); root.ariaBusy = "false";
+    this.walkSpeed = Number(game.runtime.walk_speed); this.fastWalkMultiplier = Number(game.runtime.fast_walk_multiplier);
+    if (!Number.isFinite(this.walkSpeed) || this.walkSpeed <= 0) throw new Error("walk_speed must be a positive number");
+    if (!Number.isFinite(this.fastWalkMultiplier) || this.fastWalkMultiplier < 1) throw new Error("fast_walk_multiplier must be at least 1");
+    this.doubleTouchMilliseconds = integer(game.input.double_touch_milliseconds, "double touch milliseconds");
+    this.doubleTouchMoveTolerance = Number(game.input.double_touch_move_tolerance);
+    if (!Number.isFinite(this.doubleTouchMoveTolerance) || this.doubleTouchMoveTolerance < 0) throw new Error("double_touch_move_tolerance must be a non-negative number");
+    this.touchCursor = [this.width / 2, this.height / 2]; this.touch = null; this.lastTap = null;
+    root.replaceChildren(this.canvas, this.settings()); root.ariaBusy = "false";
   }
   start() {
     this.dispatch("game.start", []);
@@ -169,6 +183,24 @@ class Runtime {
   matchingHandler(event, args) { return this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length && (!candidate.roomId || candidate.roomId === this.room) && (!candidate.localTarget || candidate.localTarget === args.at(-1))); }
   dispatch(event, args) { const handler = this.matchingHandler(event, args); if (!handler) return 0; const commands = instantiate(handler, args, this.scriptState()); this.queue.push(...commands); return commands.length; }
   commands(event, args) { const handler = this.matchingHandler(event, args); return handler ? instantiate(handler, args, this.scriptState()) : null; }
+  fallbackCommands(verb, args) {
+    const target = args.at(-1), localEvent = `entity.fallback_${verb}`;
+    const candidates = [
+      this.handlers.find((handler) => handler.event === localEvent && handler.roomId === this.room && args.includes(handler.localTarget)),
+      this.handlers.find((handler) => handler.event === `fallback.${verb}` && handler.itemId && args.includes(handler.localTarget)),
+      this.handlers.find((handler) => handler.event === `fallback.${verb}` && handler.roomId === this.room && !handler.localTarget),
+      this.handlers.find((handler) => handler.event === `fallback.${verb}` && !handler.roomId && !handler.itemId && !handler.localTarget)
+    ];
+    const handler = candidates.find(Boolean);
+    if (handler) return instantiate(handler, args, this.scriptState());
+    const spec = this.ui[`fallback.${verb}`] || this.ui.fallback || {};
+    const template = spec.text || this.ui.fallback?.text || "That doesn't work with {target}.";
+    const labels = args.map((id) => this.label(id));
+    const value = template.replaceAll("{verb}", this.ui[`verb.${verb}`]?.label || title(verb))
+      .replaceAll("{target}", labels.at(-1)).replaceAll("{first}", labels[0]).replaceAll("{second}", labels[1] ?? "");
+    return [{ op: "narrate", value }];
+  }
+  enqueueFallback(verb, args) { this.queue.push(...this.fallbackCommands(verb, args)); }
   enter(id, spawn) {
     const room = this.rooms[id]; if (!room) throw new Error(`Unknown room ${id}`); this.room = id;
     this.interactive = room.room.interactive !== "false";
@@ -199,7 +231,7 @@ class Runtime {
   }
   pointerDown(event) {
     if (event.target.closest?.(".mobile-settings")) return;
-    if (event.pointerType !== "touch") { if (event.target === this.canvas) this.pointer(event); return; }
+    if (event.pointerType !== "touch") { if (event.target === this.canvas) this.pointer(event, event.button, undefined, event.button === 0 && event.detail >= 2); return; }
     if (this.cursorMode !== "drag" && event.target !== this.canvas) return;
     if (this.touch) return;
     event.preventDefault(); root.setPointerCapture(event.pointerId);
@@ -224,6 +256,9 @@ class Runtime {
       const button = performance.now() - this.touch.startedAt >= this.longTouchMilliseconds ? 2 : 0;
       this.touch.long = button === 2;
       this.dispatchPhysicalTouch(button === 2 ? "long_press" : "tap", event, this.touchCursor);
+      const now = performance.now(), fast = button === 0 && this.lastTap && now - this.lastTap.time <= this.doubleTouchMilliseconds && !touchMoved(this.lastTap.point, this.touchCursor, this.doubleTouchMoveTolerance);
+      this.pointer(event, button, this.touchCursor, fast);
+      if (button === 0) this.lastTap = { time: now, point: [...this.touchCursor] };
     }
     this.touch = null;
   }
@@ -235,6 +270,9 @@ class Runtime {
   }
   secondaryAt(point) { this.clearSelection(); const [x, y] = point; this.perform("look", this.targetAt(x, y)); }
   primaryAt(point) {
+  pointer(event, button = event.button, point = this.eventPoint(event), fast = false) {
+    event.preventDefault();
+    if (fast && this.queue.length) { this.accelerateCommands(); return; }
     if (!this.interactive) return;
     const [x, y] = point;
     {
@@ -257,8 +295,9 @@ class Runtime {
     if (!this.activeVerb && this.inventory.includes(target)) return;
     if (!this.activeVerb) {
       this.interruptCommands(); this.actionSentence = target ? `Walk to ${this.label(target)}` : "Walk to";
-      if (!target) this.queue = [{ op: "walk", actor: "player", point: [Math.round(x), Math.round(y)], manual: true }];
+      if (!target) this.queue = [{ op: "walk", actor: "player", point: [Math.round(x), Math.round(y)], manual: true, fast }];
       else if (!this.dispatch("entity.walk", [target])) this.queue = [{ op: "walk", actor: "player", target, manual: true }];
+      if (fast) this.accelerateCommands();
       return;
     }
     if (this.activeVerb === "use") {
@@ -268,9 +307,14 @@ class Runtime {
         const commands = this.commands("entity.use_item", [this.firstObject, target]);
         const prepared = commands && prepareItemUse(commands, this);
         if (prepared) this.queue.push(...prepared);
+        else this.enqueueFallback("use_item", [this.firstObject, target]);
       }
     } else this.perform(this.activeVerb, target);
     this.clearSelection();
+  }
+  accelerateCommands() {
+    const skipping = accelerateCommandQueue(this.queue);
+    if (skipping) { this.dismissMessage(); const player = this.entities.player; if (player) player.actionTicks = 0; }
   }
   interruptCommands() { this.queue = []; const player = this.entities.player; if (player) { player.moving = false; player.action = null; player.actionTicks = 0; } }
   stopWalking() {
@@ -284,7 +328,15 @@ class Runtime {
   targetAt(x, y) {
     const layout = this.inventoryLayout();
     const inventoryTarget = this.inventory.slice(layout.page.start, layout.page.end).find((id, i) => id !== this.firstObject && inside(x, y, [layout.origin[0] + i * layout.itemWidth, layout.origin[1], layout.itemWidth, layout.itemHeight]));
-    return inventoryTarget || entityRenderOrder(this.entities).reverse().find((entity) => entity.id !== "player" && entity.id !== this.firstObject && entityIsInteractive(entity) && inside(x, y, this.bounds(entity)))?.id;
+    return inventoryTarget || entityTargetAt([x, y], this.entities, (entity, point) => entity.id !== this.firstObject && this.hitEntity(entity, point));
+  }
+  hitEntity(entity, point) {
+    const hotspot = entityHotspot(entity); if (hotspot) return pointInHotspot(point, hotspot);
+    const bounds = this.bounds(entity); if (!inside(...point, bounds)) return false;
+    if (entity.alpha_hit_test !== "true") return true;
+    const bitmap = this.bitmaps[entity.graphic]; if (!bitmap) return true;
+    const source = this.currentFrame(entity) || [0, 0, bitmap.width, bitmap.height];
+    return spriteAlphaHit(point, bounds, source, bitmapPixels(bitmap), entity.rotation);
   }
   inventoryLayout() {
     const spec = this.ui.inventory_panel, origin = tuple(spec.origin, 2, "inventory"), itemWidth = integer(spec.item_width, "item width"), itemHeight = integer(spec.item_height, "item height"), arrowWidth = integer(spec.arrow_width || "16", "arrow width");
@@ -296,7 +348,7 @@ class Runtime {
     const columns = Math.max(1, Math.floor((this.width - origin[0] - arrowWidth) / itemWidth));
     this.inventoryRow = inventoryLastRow(this.inventory.length, columns);
   }
-  perform(verb, target) { if (!target) return; this.interruptCommands(); this.actionSentence = this.verbSentence(verb, target); if (verb === "use") this.queue.push({ op: "animate", actor: "player", animation: "use" }); this.dispatch(`entity.${verb}`, [target]); }
+  perform(verb, target) { if (!target) return; this.interruptCommands(); this.actionSentence = this.verbSentence(verb, target); const commands = this.commands(`entity.${verb}`, [target]); if (commands) { if (verb === "use") this.queue.push({ op: "animate", actor: "player", animation: "use" }); this.queue.push(...commands); } else this.enqueueFallback(verb, [target]); }
   verbSentence(verb, first, second) { return verbSentence(this.ui, (id) => this.label(id), verb, first, second); }
   dismissMessage() { this.message = ""; this.messageTicks = 0; this.messageKind = ""; if (!this.queue.length) this.actionSentence = ""; }
   clearSelection() { this.activeVerb = null; this.firstObject = null; }
@@ -308,16 +360,16 @@ class Runtime {
     const player = this.entities.player;
     if (player?.actionTicks > 0) { if (--player.actionTicks === 0) player.action = null; return; }
     const command = this.queue[0]; if (!command) { this.actionSentence = ""; return; }
-    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const speed = 2, dx = target[0] - actor.position[0], dy = target[1] - actor.position[1], distance = Math.hypot(dx, dy); actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); actor.moving = distance > speed; const next = distance <= speed ? [...target] : [actor.position[0] + dx / distance * speed, actor.position[1] + dy / distance * speed]; if (actor.id === "player" && !this.walkable(next)) { actor.moving = false; this.queue.shift(); this.actionSentence = ""; return; } actor.position = next; if (distance <= speed) { actor.moving = false; this.queue.shift(); } if (actor.id === "player") this.updateTriggers(actor.position); return; }
+    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const dx = target[0] - actor.position[0], dy = target[1] - actor.position[1]; actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); const result = advanceWalk(actor.position, target, this.walkSpeed, command.fast ? this.fastWalkMultiplier : 1, actor.id === "player" ? this.walkable : () => true, (point) => { if (actor.id === "player") this.updateTriggers(point); }); actor.position = result.point; actor.moving = !result.reached && !result.blocked; if (result.reached || result.blocked) { actor.moving = false; this.queue.shift(); if (result.blocked) this.actionSentence = ""; } return; }
     this.queue.shift();
     if (command.op === "enter") this.enter(command.room, command.spawn);
-    else if (command.op === "say" || command.op === "narrate") { this.message = command.value; this.messageKind = command.op; this.messageTicks = textDuration(command.value, this.game.runtime); }
-    else if (command.op === "animate") { const actor = this.entities[command.actor]; if (actor) { actor.moving = false; actor.action = command.animation; actor.actionTicks = this.animationDuration(command.animation, actor.facing); } }
+    else if (command.op === "say" || command.op === "narrate") { if (command.skipPresentation) return; this.message = command.value; this.messageKind = command.op; this.messageTicks = command.fast ? 1 : textDuration(command.value, this.game.runtime); }
+    else if (command.op === "animate") { const actor = this.entities[command.actor]; if (actor) { actor.moving = false; actor.action = command.animation; actor.actionTicks = command.skipPresentation ? 0 : (command.fast ? 1 : this.animationDuration(command.animation, actor.facing)); } }
     else if (command.op === "take") { const entity = this.entities[command.target]; if (entity && !this.inventory.includes(command.target)) { if (!command.animated) { this.queue.unshift({ ...command, animated: true }); this.queue.unshift({ op: "animate", actor: "player", animation: "pickup" }); return; } entity.visible = "false"; this.inventoryEntities[command.target] = { ...this.items[command.target], ...entity }; this.inventory.push(command.target); this.scrollInventoryToEnd(); } }
     else if (command.op === "hide" || command.op === "show") this.entities[command.target].visible = command.op === "show" ? "true" : "false";
     else if (command.op === "set") { const [id, field] = command.target.split("."); if (id === "game") this.globals[field] = command.value; else if (this.roomState[id]) this.roomState[id][field] = command.value; else this.entities[id][field] = String(command.value); }
-    else if (command.op === "wait") this.queue.unshift(...Array(command.ticks).fill({ op: "pause" }));
-    else if (command.op === "shake") this.shakeTicks = command.ticks;
+    else if (command.op === "wait") { if (!command.skipPresentation) this.queue.unshift(...Array(command.fast ? 1 : command.ticks).fill({ op: "pause", skippable: command.skippable })); }
+    else if (command.op === "shake") { if (!command.skipPresentation) this.shakeTicks = command.fast ? 1 : command.ticks; }
     else if (command.op === "pause") return;
     else if (command.op === "face") this.entities[command.actor].facing = command.direction;
   }
@@ -331,6 +383,7 @@ class Runtime {
     c.save(); const [shakeX, shakeY] = shakeOffset(this.shakeTicks, integer(this.game.runtime.shake_amplitude || "2", "shake amplitude")); c.translate(shakeX, shakeY);
     c.fillStyle = background; c.fillRect(0, 0, this.width, this.height);
     if (room) for (const entity of entityRenderOrder(this.entities)) if (entity.visible !== "false") this.sprite(entity);
+    if (room && (room.room.hotspot_overlay === "true" || this.game.runtime.hotspot_overlay === "true")) this.drawHotspots();
     if (!this.interfaceVisible) { c.restore(); return; }
     const inventory = this.inventoryLayout();
     for (const [i, id] of this.inventory.slice(inventory.page.start, inventory.page.end).entries()) this.sprite({ ...this.items[id], ...this.inventoryEntities[id], visible: "true", position: [inventory.origin[0] + i * inventory.itemWidth, inventory.origin[1]], origin: "0,0", size: `${inventory.itemWidth},${inventory.itemHeight}` });
@@ -358,8 +411,24 @@ class Runtime {
   label(id) { return this.entities[id]?.label || this.inventoryEntities[id]?.label || id?.replaceAll("_", " ") || ""; }
   sprite(entity) {
     const [x, y, w, h] = this.bounds(entity), graphic = this.graphics[`graphic.${entity.graphic}`], bitmap = this.bitmaps[entity.graphic], animation = entity.id === "player" ? this.animations[`animation.${entity.action || (entity.moving ? "walking" : "idle")}_${entity.facing || "down"}`] : graphic;
-    if (bitmap) { if (animation?.frames) { const frames = animation.frames.split(";").map((frame) => tuple(frame.trim(), 5, "animation frame")), cycle = frames.reduce((sum, frame) => sum + frame[4], 0); let phase = entity.action ? Math.max(0, cycle - entity.actionTicks) % cycle : this.tick % cycle, selected = frames[0]; for (const frame of frames) { if (phase < frame[4]) { selected = frame; break; } phase -= frame[4]; } this.drawBitmap(entity, bitmap, selected.slice(0, 4), x, y, w, h); } else this.drawBitmap(entity, bitmap, null, x, y, w, h); return; }
+    if (bitmap) { this.drawBitmap(entity, bitmap, animation?.frames ? this.currentFrame(entity) : null, x, y, w, h); return; }
     this.ctx.fillStyle = this.graphics[`graphic.${entity.graphic}`]?.missing_color || "#ff00ff"; this.ctx.fillRect(Math.round(x), Math.round(y), w, h);
+  }
+  currentFrame(entity) {
+    const animation = entity.id === "player" ? this.animations[`animation.${entity.action || (entity.moving ? "walking" : "idle")}_${entity.facing || "down"}`] : this.graphics[`graphic.${entity.graphic}`];
+    if (!animation?.frames) return null;
+    const frames = animation.frames.split(";").map((frame) => tuple(frame.trim(), 5, "animation frame")), cycle = frames.reduce((sum, frame) => sum + frame[4], 0);
+    let phase = entity.action ? Math.max(0, cycle - entity.actionTicks) % cycle : this.tick % cycle;
+    for (const frame of frames) { if (phase < frame[4]) return frame.slice(0, 4); phase -= frame[4]; }
+    return frames[0].slice(0, 4);
+  }
+  drawHotspots() {
+    const c = this.ctx; c.save(); c.strokeStyle = "#00ffff"; c.fillStyle = "#00ffff"; c.font = "8px monospace"; c.textBaseline = "bottom";
+    for (const entity of entityRenderOrder(this.entities)) { const hotspot = entityHotspot(entity); if (!hotspot) continue; c.beginPath(); let labelPoint;
+      if (hotspot.kind === "rect") { c.rect(...hotspot.points); labelPoint = hotspot.points; }
+      else { hotspot.points.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); labelPoint = hotspot.points[0]; }
+      c.stroke(); c.fillText(`${entity.id}${entity.hotspot_priority ? ` (${entity.hotspot_priority})` : ""}`, labelPoint[0], labelPoint[1]);
+    } c.restore();
   }
   drawBitmap(entity, bitmap, source, x, y, w, h) {
     const angle = Number(entity.rotation || 0) * Math.PI / 180, args = source ? [bitmap, ...source, -w / 2, -h / 2, w, h] : [bitmap, -w / 2, -h / 2, w, h];
@@ -389,4 +458,4 @@ class Runtime {
 }
 const inside = (x, y, [bx, by, bw, bh]) => x >= bx && y >= by && x < bx + bw && y < by + bh;
 const title = (value) => value[0].toUpperCase() + value.slice(1);
-boot().catch((error) => { root.textContent = `Cannot start game: ${error.message}`; root.ariaBusy = "false"; console.error(error); });
+if (root && entry) boot().catch((error) => { root.textContent = `Cannot start game: ${error.message}`; root.ariaBusy = "false"; console.error(error); });
