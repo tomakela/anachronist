@@ -1,6 +1,16 @@
 import { resolvePackagePath } from "./path.js";
 
 const base64Suffix = ".base64";
+const pixelCache = new WeakMap();
+
+/** Decode and cache bitmap pixels once for alpha-aware pointer hit testing. */
+export function bitmapPixels(bitmap, canvasFactory = () => document.createElement("canvas")) {
+  if (pixelCache.has(bitmap)) return pixelCache.get(bitmap);
+  const canvas = canvasFactory(); canvas.width = bitmap.width; canvas.height = bitmap.height;
+  const context = canvas.getContext("2d", { willReadFrequently: true }); context.drawImage(bitmap, 0, 0);
+  const result = { width: canvas.width, height: canvas.height, data: context.getImageData(0, 0, canvas.width, canvas.height).data };
+  pixelCache.set(bitmap, result); return result;
+}
 
 export function transparentBitmap(bitmap, color, canvasFactory = () => document.createElement("canvas")) {
   if (!color) return bitmap;

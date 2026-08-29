@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
+import { bitmapPixels, loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
+import { bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
 import { loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
 import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
 import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
@@ -158,6 +160,32 @@ test("a catalogue transparent color clears only exactly matching pixels", () => 
   const canvas = transparentBitmap({ width: 2, height: 1 }, "#ff00ff", factory);
   assert.deepEqual([...canvas.image.data], [255, 0, 255, 0, 254, 0, 255, 255]);
   assert.throws(() => transparentBitmap({ width: 1, height: 1 }, "magenta", factory), /expected #RRGGBB/);
+});
+
+test("alpha hits cache pixels and use the current frame", () => {
+  let reads = 0;
+  const factory = () => ({ getContext: () => ({ drawImage() {}, getImageData() { reads++; return { data: new Uint8ClampedArray([0,0,0,0, 1,1,1,255, 1,1,1,255, 0,0,0,0]) }; } }) });
+  const bitmap = { width: 4, height: 1 }, pixels = bitmapPixels(bitmap, factory);
+  assert.equal(bitmapPixels(bitmap, factory), pixels); assert.equal(reads, 1);
+  assert.equal(spriteAlphaHit([15, 15], [10, 10, 20, 10], [0, 0, 2, 1], pixels), false);
+  assert.equal(spriteAlphaHit([15, 15], [10, 10, 20, 10], [2, 0, 2, 1], pixels), true);
+});
+
+test("explicit polygon hotspots are independent of sprite bounds", () => {
+  const hotspot = entityHotspot({ id: "door", hotspot_polygon: "0,0; 20,0; 10,20" });
+  assert.equal(pointInHotspot([10, 5], hotspot), true); assert.equal(pointInHotspot([19, 19], hotspot), false);
+});
+
+test("target selection uses z order and priority while ignoring decorations", () => {
+  const entities = { low: { id: "low", z: "1" }, high: { id: "high", z: "2" }, decor: { id: "decor", z: "9", interactive: "false" } };
+  assert.equal(entityTargetAt([0, 0], entities, () => true), "high"); entities.low.hotspot_priority = "3";
+  assert.equal(entityTargetAt([0, 0], entities, () => true), "low");
+});
+
+test("alpha coordinates respect scaled and origin-shifted bounds", () => {
+  const pixels = { width: 2, height: 1, data: new Uint8ClampedArray([0,0,0,0, 0,0,0,255]) }, bounds = [80, 50, 40, 20];
+  assert.equal(spriteAlphaHit([85, 60], bounds, [0, 0, 2, 1], pixels), false);
+  assert.equal(spriteAlphaHit([115, 60], bounds, [0, 0, 2, 1], pixels), true);
 });
 
 test("the demo graphic catalogue requests images before using base64 fallbacks", async () => {

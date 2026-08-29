@@ -1,6 +1,8 @@
 import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
+import { bitmapPixels, loadBitmaps } from "./bitmaps.js";
+import { bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
 import { loadBitmaps } from "./bitmaps.js";
 import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
 
@@ -249,7 +251,15 @@ export class Runtime {
   targetAt(x, y) {
     const layout = this.inventoryLayout();
     const inventoryTarget = this.inventory.slice(layout.page.start, layout.page.end).find((id, i) => id !== this.firstObject && inside(x, y, [layout.origin[0] + i * layout.itemWidth, layout.origin[1], layout.itemWidth, layout.itemHeight]));
-    return inventoryTarget || entityRenderOrder(this.entities).reverse().find((entity) => entity.id !== "player" && entity.id !== this.firstObject && entityIsInteractive(entity) && inside(x, y, this.bounds(entity)))?.id;
+    return inventoryTarget || entityTargetAt([x, y], this.entities, (entity, point) => entity.id !== this.firstObject && this.hitEntity(entity, point));
+  }
+  hitEntity(entity, point) {
+    const hotspot = entityHotspot(entity); if (hotspot) return pointInHotspot(point, hotspot);
+    const bounds = this.bounds(entity); if (!inside(...point, bounds)) return false;
+    if (entity.alpha_hit_test !== "true") return true;
+    const bitmap = this.bitmaps[entity.graphic]; if (!bitmap) return true;
+    const source = this.currentFrame(entity) || [0, 0, bitmap.width, bitmap.height];
+    return spriteAlphaHit(point, bounds, source, bitmapPixels(bitmap), entity.rotation);
   }
   inventoryLayout() {
     const spec = this.ui.inventory_panel, origin = tuple(spec.origin, 2, "inventory"), itemWidth = integer(spec.item_width, "item width"), itemHeight = integer(spec.item_height, "item height"), arrowWidth = integer(spec.arrow_width || "16", "arrow width");
@@ -295,6 +305,7 @@ export class Runtime {
     c.save(); const [shakeX, shakeY] = shakeOffset(this.shakeTicks, integer(this.game.runtime.shake_amplitude || "2", "shake amplitude")); c.translate(shakeX, shakeY);
     c.fillStyle = background; c.fillRect(0, 0, this.width, this.height);
     if (room) for (const entity of entityRenderOrder(this.entities)) if (entity.visible !== "false") this.sprite(entity);
+    if (room && (room.room.hotspot_overlay === "true" || this.game.runtime.hotspot_overlay === "true")) this.drawHotspots();
     if (!this.interfaceVisible) { c.restore(); return; }
     const inventory = this.inventoryLayout();
     for (const [i, id] of this.inventory.slice(inventory.page.start, inventory.page.end).entries()) this.sprite({ ...this.items[id], ...this.inventoryEntities[id], visible: "true", position: [inventory.origin[0] + i * inventory.itemWidth, inventory.origin[1]], origin: "0,0", size: `${inventory.itemWidth},${inventory.itemHeight}` });
@@ -313,8 +324,24 @@ export class Runtime {
   label(id) { return this.entities[id]?.label || this.inventoryEntities[id]?.label || id?.replaceAll("_", " ") || ""; }
   sprite(entity) {
     const [x, y, w, h] = this.bounds(entity), graphic = this.graphics[`graphic.${entity.graphic}`], bitmap = this.bitmaps[entity.graphic], animation = entity.id === "player" ? this.animations[`animation.${entity.action || (entity.moving ? "walking" : "idle")}_${entity.facing || "down"}`] : graphic;
-    if (bitmap) { if (animation?.frames) { const frames = animation.frames.split(";").map((frame) => tuple(frame.trim(), 5, "animation frame")), cycle = frames.reduce((sum, frame) => sum + frame[4], 0); let phase = entity.action ? Math.max(0, cycle - entity.actionTicks) % cycle : this.tick % cycle, selected = frames[0]; for (const frame of frames) { if (phase < frame[4]) { selected = frame; break; } phase -= frame[4]; } this.drawBitmap(entity, bitmap, selected.slice(0, 4), x, y, w, h); } else this.drawBitmap(entity, bitmap, null, x, y, w, h); return; }
+    if (bitmap) { this.drawBitmap(entity, bitmap, animation?.frames ? this.currentFrame(entity) : null, x, y, w, h); return; }
     this.ctx.fillStyle = this.graphics[`graphic.${entity.graphic}`]?.missing_color || "#ff00ff"; this.ctx.fillRect(Math.round(x), Math.round(y), w, h);
+  }
+  currentFrame(entity) {
+    const animation = entity.id === "player" ? this.animations[`animation.${entity.action || (entity.moving ? "walking" : "idle")}_${entity.facing || "down"}`] : this.graphics[`graphic.${entity.graphic}`];
+    if (!animation?.frames) return null;
+    const frames = animation.frames.split(";").map((frame) => tuple(frame.trim(), 5, "animation frame")), cycle = frames.reduce((sum, frame) => sum + frame[4], 0);
+    let phase = entity.action ? Math.max(0, cycle - entity.actionTicks) % cycle : this.tick % cycle;
+    for (const frame of frames) { if (phase < frame[4]) return frame.slice(0, 4); phase -= frame[4]; }
+    return frames[0].slice(0, 4);
+  }
+  drawHotspots() {
+    const c = this.ctx; c.save(); c.strokeStyle = "#00ffff"; c.fillStyle = "#00ffff"; c.font = "8px monospace"; c.textBaseline = "bottom";
+    for (const entity of entityRenderOrder(this.entities)) { const hotspot = entityHotspot(entity); if (!hotspot) continue; c.beginPath(); let labelPoint;
+      if (hotspot.kind === "rect") { c.rect(...hotspot.points); labelPoint = hotspot.points; }
+      else { hotspot.points.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); labelPoint = hotspot.points[0]; }
+      c.stroke(); c.fillText(`${entity.id}${entity.hotspot_priority ? ` (${entity.hotspot_priority})` : ""}`, labelPoint[0], labelPoint[1]);
+    } c.restore();
   }
   drawBitmap(entity, bitmap, source, x, y, w, h) {
     const angle = Number(entity.rotation || 0) * Math.PI / 180, args = source ? [bitmap, ...source, -w / 2, -h / 2, w, h] : [bitmap, -w / 2, -h / 2, w, h];
