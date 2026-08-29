@@ -2,7 +2,7 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { loadBitmaps } from "./bitmaps.js";
-import { bitmapWalkRegion, dragCursor, enteredTriggers, entityRenderOrder, interfacePoint, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, verbSentence } from "./interaction.js";
+import { bitmapWalkRegion, dragCursor, enteredTriggers, entityRenderOrder, interfacePoint, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
 
 const root = document.querySelector("#engine-host");
 const entry = document.querySelector('meta[name="game-entry"]')?.content;
@@ -47,6 +47,8 @@ class Runtime {
     this.draggingSensitivity = Number(game.input.dragging_sensitivity);
     if (!Number.isFinite(this.draggingSensitivity) || this.draggingSensitivity <= 0) throw new Error("dragging_sensitivity must be a positive number");
     this.longTouchMilliseconds = integer(game.input.long_touch_milliseconds, "long touch milliseconds");
+    this.longTouchMoveTolerance = Number(game.input.long_touch_move_tolerance ?? 8);
+    if (!Number.isFinite(this.longTouchMoveTolerance) || this.longTouchMoveTolerance < 0) throw new Error("long_touch_move_tolerance must be a non-negative number");
     this.touchCursor = [this.width / 2, this.height / 2]; this.touch = null;
     root.replaceChildren(this.canvas, this.settings()); root.ariaBusy = "false";
   }
@@ -130,7 +132,7 @@ class Runtime {
     if (event.pointerType !== "touch") { if (event.target === this.canvas) this.hover(event); return; }
     if (!this.touch || this.touch.id !== event.pointerId) return;
     const point = this.eventPoint(event), delta = [point[0] - this.touch.last[0], point[1] - this.touch.last[1]];
-    if (Math.hypot(point[0] - this.touch.start[0], point[1] - this.touch.start[1]) > 3) this.touch.moved = true;
+    if (touchMoved(this.touch.start, point, this.longTouchMoveTolerance)) this.touch.moved = true;
     if (this.cursorMode === "direct") this.touchCursor = point;
     else this.touchCursor = dragCursor(this.touchCursor, delta, this.draggingSensitivity, this.width, this.height);
     this.touch.last = point; this.updateHover(...this.touchCursor);
