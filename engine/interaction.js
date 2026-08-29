@@ -74,6 +74,19 @@ export function retainedRoomEntities(states, room, create) {
   return states[room] || (states[room] = create());
 }
 
+/** Read inventory items granted by a room's package data. */
+export function roomEntryItems(room) {
+  return Object.entries(room).filter(([section]) => section.startsWith("inventory."))
+    .map(([section, values]) => ({ id: section.slice(10), ...values }));
+}
+
+/** Calculate the visible inventory page and whether either arrow is enabled. */
+export function inventoryPage(itemCount, row, columns) {
+  const rows = Math.max(1, Math.ceil(itemCount / columns));
+  const current = Math.max(0, Math.min(row, rows - 1));
+  return { row: current, start: current * columns, end: Math.min(itemCount, (current + 1) * columns), up: current > 0, down: current < rows - 1 };
+}
+
 /**
  * Parse a room's semicolon-separated `y, scale` perspective stops. At least two
  * stops are required so that a room cannot silently declare a useless curve.

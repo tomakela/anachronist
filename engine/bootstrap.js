@@ -2,7 +2,7 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { loadBitmaps } from "./bitmaps.js";
-import { bitmapWalkRegion, enteredTriggers, entityRenderOrder, interpolatedScale, parseScalingStops, prepareItemUse, retainedRoomEntities, shakeOffset, verbSentence } from "./interaction.js";
+import { bitmapWalkRegion, enteredTriggers, entityRenderOrder, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, verbSentence } from "./interaction.js";
 
 const root = document.querySelector("#engine-host");
 const entry = document.querySelector('meta[name="game-entry"]')?.content;
@@ -30,7 +30,7 @@ class Runtime {
   constructor(game, ui, rooms, graphics, animations, bitmaps, handlers) {
     Object.assign(this, { game, ui, rooms, graphics, animations, bitmaps, handlers });
     this.entities = Object.create(null); this.roomEntities = Object.create(null); this.inventory = []; this.inventoryEntities = Object.create(null); this.globals = Object.create(null);
-    this.activeVerb = null; this.firstObject = null; this.hoverTarget = null; this.queue = []; this.message = ""; this.messageKind = ""; this.messageTicks = 0; this.actionSentence = ""; this.tick = 0; this.shakeTicks = 0;
+    this.activeVerb = null; this.firstObject = null; this.hoverTarget = null; this.queue = []; this.message = ""; this.messageKind = ""; this.messageTicks = 0; this.actionSentence = ""; this.tick = 0; this.shakeTicks = 0; this.inventoryRow = 0;
     this.width = integer(game.display.logical_width, "logical_width"); this.height = integer(game.display.logical_height, "logical_height");
     this.canvas = document.createElement("canvas"); this.canvas.width = this.width; this.canvas.height = this.height;
     const aspect = this.width / this.height;
@@ -60,6 +60,9 @@ class Runtime {
       for (const [section, values] of Object.entries(room)) if (section.startsWith("entity.")) entities[section.slice(7)] = { id: section.slice(7), ...values, position: tuple(values.position, 2, `${section}.position`) };
       return entities;
     });
+    for (const item of roomEntryItems(room)) if (!this.inventory.includes(item.id)) {
+      this.inventory.push(item.id); this.inventoryEntities[item.id] = { ...item, visible: "false", position: [0, 0] };
+    }
     const point = tuple(room[`spawn.${spawn}`].position, 2, "spawn"), player = this.animations.player || {}; this.entities.player = { id: "player", position: point, graphic: player.graphic || "placeholder.actor", size: player.size || "16,32", origin: player.origin, label: "player", visible: "true", facing: "down", moving: false, action: null, actionTicks: 0 };
     this.triggers = Object.fromEntries(Object.entries(room).filter(([section]) => section.startsWith("trigger.")).map(([section, values]) => [section.slice(8), tuple(values.rect, 4, `${section}.rect`)]));
     // A spawn may deliberately overlap a destination trigger. Treat it as
@@ -73,6 +76,11 @@ class Runtime {
     event.preventDefault();
     if (event.button === 2) this.clearSelection();
     const [x, y] = this.eventPoint(event);
+    if (event.button === 0) {
+      const inventory = this.inventoryLayout();
+      if (inside(x, y, inventory.upRect) && inventory.page.up) { this.inventoryRow--; return; }
+      if (inside(x, y, inventory.downRect) && inventory.page.down) { this.inventoryRow++; return; }
+    }
     let selectedVerb = null;
     if (event.button === 0) for (const verb of list(this.ui.verb_panel.verbs)) { const box = tuple(this.ui[`verb.${verb}`].rect, 4, verb); if (inside(x, y, box)) { selectedVerb = verb; break; } }
     if (this.message) {
@@ -113,8 +121,14 @@ class Runtime {
     this.actionSentence = "";
   }
   targetAt(x, y) {
-    const origin = tuple(this.ui.inventory_panel.origin, 2, "inventory"), itemWidth = integer(this.ui.inventory_panel.item_width, "item width"), itemHeight = integer(this.ui.inventory_panel.item_height, "item height");
-    return this.inventory.find((id, i) => id !== this.firstObject && inside(x, y, [origin[0] + i * itemWidth, origin[1], itemWidth, itemHeight])) || entityRenderOrder(this.entities).reverse().find((entity) => entity.id !== "player" && entity.id !== this.firstObject && entity.visible !== "false" && inside(x, y, this.bounds(entity)))?.id;
+    const layout = this.inventoryLayout();
+    const inventoryTarget = this.inventory.slice(layout.page.start, layout.page.end).find((id, i) => id !== this.firstObject && inside(x, y, [layout.origin[0] + i * layout.itemWidth, layout.origin[1], layout.itemWidth, layout.itemHeight]));
+    return inventoryTarget || entityRenderOrder(this.entities).reverse().find((entity) => entity.id !== "player" && entity.id !== this.firstObject && entity.visible !== "false" && inside(x, y, this.bounds(entity)))?.id;
+  }
+  inventoryLayout() {
+    const spec = this.ui.inventory_panel, origin = tuple(spec.origin, 2, "inventory"), itemWidth = integer(spec.item_width, "item width"), itemHeight = integer(spec.item_height, "item height"), arrowWidth = integer(spec.arrow_width || "16", "arrow width");
+    const columns = Math.max(1, Math.floor((this.width - origin[0] - arrowWidth) / itemWidth)), page = inventoryPage(this.inventory.length, this.inventoryRow, columns); this.inventoryRow = page.row;
+    return { origin, itemWidth, itemHeight, page, upRect: [this.width - arrowWidth, origin[1], arrowWidth, itemHeight / 2], downRect: [this.width - arrowWidth, origin[1] + itemHeight / 2, arrowWidth, itemHeight / 2] };
   }
   perform(verb, target) { if (!target) return; this.interruptCommands(); this.actionSentence = this.verbSentence(verb, target); if (verb === "use") this.queue.push({ op: "animate", actor: "player", animation: "use" }); this.dispatch(`entity.${verb}`, [target]); }
   verbSentence(verb, first, second) { return verbSentence(this.ui, (id) => this.label(id), verb, first, second); }
@@ -150,8 +164,9 @@ class Runtime {
     c.save(); const [shakeX, shakeY] = shakeOffset(this.shakeTicks, integer(this.game.runtime.shake_amplitude || "2", "shake amplitude")); c.translate(shakeX, shakeY);
     c.fillStyle = background; c.fillRect(0, 0, this.width, this.height);
     if (room) for (const entity of entityRenderOrder(this.entities)) if (entity.visible !== "false") this.sprite(entity);
-    const origin = tuple(this.ui.inventory_panel.origin, 2, "inventory"), itemWidth = integer(this.ui.inventory_panel.item_width, "item width");
-    for (const [i, id] of this.inventory.entries()) this.sprite({ ...this.inventoryEntities[id], visible: "true", position: [origin[0] + i * itemWidth, origin[1]], origin: "0,0", size: `${itemWidth},${this.ui.inventory_panel.item_height}` });
+    const inventory = this.inventoryLayout();
+    for (const [i, id] of this.inventory.slice(inventory.page.start, inventory.page.end).entries()) this.sprite({ ...this.inventoryEntities[id], visible: "true", position: [inventory.origin[0] + i * inventory.itemWidth, inventory.origin[1]], origin: "0,0", size: `${inventory.itemWidth},${inventory.itemHeight}` });
+    this.inventoryArrow(inventory.upRect, "up", inventory.page.up); this.inventoryArrow(inventory.downRect, "down", inventory.page.down);
     this.textRegion(this.ui.message_region, this.messageKind === "narrate" ? this.message : "");
     if (this.messageKind === "say") this.speech(this.entities.player, this.message);
     const hoverTarget = this.hoverTarget === this.firstObject ? null : this.hoverTarget;
@@ -184,6 +199,11 @@ class Runtime {
     this.ctx.fillStyle = spec.text || this.ui.palette.text; this.ctx.textAlign = "center"; this.ctx.textBaseline = "middle"; this.ctx.fillText(text, x + width / 2, y + height / 2, width - padding * 2);
   }
   panel(rect, label, active) { const [x, y, w, h] = tuple(rect, 4, "panel"); this.ctx.fillStyle = active ? this.ui.palette.active : this.ui.palette.panel; this.ctx.fillRect(x, y, w, h); this.ctx.strokeStyle = this.ui.palette.border; this.ctx.strokeRect(x + .5, y + .5, w - 1, h - 1); this.ctx.strokeStyle = this.ui.palette.shadow; this.ctx.beginPath(); this.ctx.moveTo(x + 2, y + h - 2); this.ctx.lineTo(x + w - 2, y + h - 2); this.ctx.lineTo(x + w - 2, y + 2); this.ctx.stroke(); this.ctx.fillStyle = this.ui.palette.text; this.ctx.font = this.ui.interface.font; this.ctx.textAlign = "left"; this.ctx.textBaseline = "middle"; this.ctx.fillText(label, x + 5, y + h / 2); }
+  inventoryArrow(rect, direction, enabled) {
+    const [x, y, w, h] = rect, centerX = x + w / 2, centerY = y + h / 2, sign = direction === "up" ? -1 : 1;
+    this.ctx.fillStyle = this.ui.palette.panel; this.ctx.fillRect(x, y, w, h); this.ctx.strokeStyle = this.ui.palette.border; this.ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+    this.ctx.fillStyle = enabled ? this.ui.palette.text : (this.ui.palette.disabled || "#687080"); this.ctx.beginPath(); this.ctx.moveTo(centerX, centerY + sign * 4); this.ctx.lineTo(centerX - 5, centerY + sign * -3); this.ctx.lineTo(centerX + 5, centerY + sign * -3); this.ctx.closePath(); this.ctx.fill();
+  }
 }
 const inside = (x, y, [bx, by, bw, bh]) => x >= bx && y >= by && x < bx + bw && y < by + bh;
 const title = (value) => value[0].toUpperCase() + value.slice(1);
