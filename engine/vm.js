@@ -23,6 +23,9 @@ export function prepareItemUse(commands, world, protocol) {
       if (inventory.has(command.target)) continue;
       if (!visible.get(command.target)) return null;
       inventory.add(command.target); visible.set(command.target, false); prepared.push(command);
+    } else if (command.op === "remove") {
+      if (!inventory.has(command.target)) return null;
+      inventory.delete(command.target); prepared.push(command);
     } else if (["show", "hide"].includes(command.op)) {
       if (!visible.has(command.target)) return null; visible.set(command.target, command.op === "show"); prepared.push(command);
     } else if (command.op === "set") {
@@ -172,6 +175,7 @@ export class DeterministicVM {
     else if (command.op === "say" || command.op === "narrate") { if (command.skipPresentation) return; this.message = command.value; this.messageKind = command.op; this.messageTicks = command.fast ? 1 : textDuration(command.value, this.game.runtime); }
     else if (command.op === "animate") { const actor = this.entities[command.actor]; if (actor) { actor.moving = false; actor.action = command.animation; actor.actionTicks = command.skipPresentation ? 0 : (command.fast ? 1 : this.animationDuration(command.animation, actor.facing)); } }
     else if (command.op === "take") { const entity = this.entities[command.target]; if (entity && !this.inventory.includes(command.target)) { if (!command.animated) { this.queue.unshift({ ...command, animated: true }); this.queue.unshift({ op: "animate", actor: this.protocolValue("player_actor"), animation: this.protocolValue("pickup_animation") }); return; } entity.visible = "false"; this.inventoryEntities[command.target] = { ...this.items[command.target], ...entity }; this.inventory.push(command.target); this.scrollInventoryToEnd(); } }
+    else if (command.op === "remove") { const index = this.inventory.indexOf(command.target); if (index >= 0) { this.inventory.splice(index, 1); delete this.inventoryEntities[command.target]; this.inventoryLayout(); } }
     else if (command.op === "hide" || command.op === "show") this.entities[command.target].visible = command.op === "show" ? "true" : "false";
     else if (command.op === "set") { const [id, field] = command.target.split("."); if (id === "game") this.globals[field] = command.value; else if (this.roomState[id]) this.roomState[id][field] = command.value; else this.entities[id][field] = String(command.value); }
     else if (command.op === "wait") { if (!command.skipPresentation) this.queue.unshift(...Array(command.fast ? 1 : command.ticks).fill({ op: "pause", skippable: command.skippable })); }
