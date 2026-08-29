@@ -137,6 +137,7 @@ Commands are VM operations, not host calls:
 - `walk actor to ...`, `face actor ...`, and `stop actor`;
 - `show`, `hide`, `enable`, `disable`, and component `set`;
 - `play`/`stop` for declared animations and audio cues;
+- `shake N ticks` for a deterministic, game-configured screen shake;
 - `say`, `narrate`, and `choose` using localized text IDs;
 - `add ... to inventory`, `remove ... from inventory`, and combinations;
 - `camera` operations declared by the room; and

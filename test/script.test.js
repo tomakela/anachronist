@@ -5,7 +5,7 @@ import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
-import { bitmapWalkRegion, enteredTriggers, entityRenderOrder, interpolatedScale, parseScalingStops, prepareItemUse, retainedRoomEntities, verbSentence } from "../engine/interaction.js";
+import { bitmapWalkRegion, enteredTriggers, entityRenderOrder, interpolatedScale, parseScalingStops, prepareItemUse, retainedRoomEntities, shakeOffset, verbSentence } from "../engine/interaction.js";
 
 const pixelCanvas = (width, height, values) => () => {
   const image = { data: new Uint8ClampedArray(values) };
@@ -108,6 +108,13 @@ test("dialogue duration is configured from character count", () => {
   assert.equal(textDuration("a sufficiently long sentence", runtime), 142);
 });
 
+test("shake commands compile with a deterministic screen offset", () => {
+  const [command] = instantiate(compile("on room.enter() { shake 24 ticks; }")[0], []);
+  assert.deepEqual(command, { op: "shake", ticks: 24, value: undefined });
+  assert.deepEqual([1, 2, 3, 4].map((ticks) => shakeOffset(ticks, 2)), [[2, 0], [0, -2], [0, 2], [-2, 0]]);
+  assert.deepEqual(shakeOffset(0, 2), [0, 0]);
+});
+
 test("the configured verb sentences use only the intended prepositions", async () => {
   const ui = parseIni(await readFile(new URL("../game/interface.ini", import.meta.url), "utf8"));
   assert.equal(ui["verb.look"].preposition, "at");
@@ -207,7 +214,7 @@ test("taking the wall clock creates the persistent fallen-clock scene", async ()
   const handler = (event) => handlers.find((candidate) => candidate.event === event);
   assert.deepEqual(instantiate(handler("entity.take"), ["clock"], { game: {} }).map(({ op, target, value }) => [op, target, value]), [
     ["walk", "clock", undefined], ["hide", "clock", undefined], ["show", "fallen_clock", undefined],
-    ["set", "game.clock_fallen", true], ["say", undefined, "Ooops"]
+    ["set", "game.clock_fallen", true], ["shake", undefined, undefined], ["say", undefined, "Ooops"]
   ]);
   assert.deepEqual(instantiate(handler("room.enter"), ["hall"], { game: { door_open: false, clock_fallen: true, fallen_clock_taken: false } }).map(({ op, target }) => [op, target]), [
     ["hide", "clock"], ["show", "fallen_clock"]

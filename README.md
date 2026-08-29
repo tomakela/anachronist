@@ -43,8 +43,10 @@ records key acquisition in the persistent `game.key_taken` global for its game
 logic.
 Room `player_scaling` perspective stops scale the actor according to its y
 position, with linear interpolation between two or more `y,scale` pairs. Taking
-the hall clock now runs a multi-step scene: it disappears from the wall, appears
-fallen on the floor, and remains fallen after a round trip to the garden.
+the hall clock now runs a multi-step scene: it disappears from the wall, shakes
+the screen as it falls to the floor, and remains fallen after a round trip to
+the garden. Scripts start the effect with `shake N ticks;`, while the game
+package controls its logical-pixel amplitude.
 Rooms may also declare rectangular `[trigger.name]` regions. Crossing into one
 dispatches `trigger.enter(name)`; a player spawned inside a region must leave it
 before that region can fire, preventing immediate room-transition loops. The

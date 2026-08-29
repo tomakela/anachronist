@@ -63,6 +63,7 @@ on entity.take(target) {
         hide clock;
         show fallen_clock;
         set game.clock_fallen = true;
+        shake 24 ticks;
         say "Ooops";
     } else {
         if (target == fallen_clock) {
