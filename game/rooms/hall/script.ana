@@ -40,7 +40,7 @@ on fallen_clock.look() {
 }
 
 on key.look() {
-    say "A small brass key."
+    say "There is a key on the floor."
 }
 
 on trigger.enter(region) {

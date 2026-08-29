@@ -1,4 +1,4 @@
 // Item-owned handlers remain available regardless of the current room.
-on look() {
+on inventory.coffee_cup.look() {
     say "A reassuring cup of coffee."
 }

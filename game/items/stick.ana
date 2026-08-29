@@ -1,3 +1,3 @@
-on look() {
+on inventory.stick.look() {
     say "A useful-looking stick."
 }

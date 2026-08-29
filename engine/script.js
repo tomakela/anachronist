@@ -74,8 +74,14 @@ export function compile(source, compileContext = {}) {
     take(")"); newlines();
     const skippable = peek("skippable") ? (take(), newlines(), true) : false;
     let event = declaredEvent, localTarget;
-    if (compileContext.itemId && declaredEvent.startsWith("fallback.")) { localTarget = compileContext.itemId; args.push("target"); }
-    else if (compileContext.itemId && !declaredEvent.includes(".")) { event = `entity.${declaredEvent}`; localTarget = compileContext.itemId; args.push("target"); }
+    let inventoryOnly = false;
+    if (compileContext.itemId && declaredEvent.startsWith("fallback.")) { localTarget = compileContext.itemId; args.push("target"); inventoryOnly = true; }
+    else if (compileContext.itemId && declaredEvent.startsWith("inventory.")) {
+      const [namespace, item, action, extra] = declaredEvent.split(".");
+      if (namespace !== "inventory" || item !== compileContext.itemId || !action || extra) throw new Error(`script: invalid inventory event ${declaredEvent}`);
+      event = `entity.${action}`; localTarget = item; args.push("target"); inventoryOnly = true;
+    }
+    else if (compileContext.itemId) throw new Error(`script: inventory handler must reference inventory.${compileContext.itemId}`);
     else if (compileContext.roomId && declaredEvent === "enter") { event = "room.enter"; args.push("room"); }
     else if (compileContext.roomId && declaredEvent.startsWith("fallback.")) { /* package-style room fallback */ }
     else if (compileContext.roomId && declaredEvent.includes(".") && !["game", "room", "entity", "trigger"].includes(declaredEvent.split(".")[0])) {
@@ -84,6 +90,7 @@ export function compile(source, compileContext = {}) {
       if (compileContext.entities && !compileContext.entities.includes(entity)) throw new Error(`script: unknown local entity ${entity}`);
       event = `entity.${action}`; localTarget = entity; args.push("target");
     }
+    handlers.push({ event, args, body: block(), skippable, ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(compileContext.itemId ? { itemId: compileContext.itemId } : {}), ...(inventoryOnly ? { inventoryOnly: true } : {}), ...(localTarget ? { localTarget } : {}) });
     handlers.push({ event, args, body: block(), skippable, tasks, ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(localTarget ? { localTarget } : {}) });
     newlines();
   }
