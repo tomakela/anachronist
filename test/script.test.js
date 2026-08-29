@@ -5,7 +5,7 @@ import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { loadBitmaps } from "../engine/bitmaps.js";
-import { enteredTriggers, prepareItemUse, retainedRoomEntities, verbSentence } from "../engine/interaction.js";
+import { enteredTriggers, interpolatedScale, parseScalingStops, prepareItemUse, retainedRoomEntities, verbSentence } from "../engine/interaction.js";
 
 test("a handler is fully expanded into an ordered command chain", () => {
   const [handler] = compile(`module demo; on entity.use_item(item, target) {
@@ -162,6 +162,28 @@ test("room entity mutations survive leaving and returning", () => {
   assert.equal(returned.clock.visible, "false");
 });
 
+test("room perspective scaling interpolates and clamps between y stops", () => {
+  const stops = parseScalingStops("140,1.2; 60,0.5; 100,0.9");
+  assert.deepEqual(stops, [[60, 0.5], [100, 0.9], [140, 1.2]]);
+  assert.equal(interpolatedScale(40, stops), 0.5);
+  assert.equal(interpolatedScale(80, stops), 0.7);
+  assert.equal(interpolatedScale(120, stops), 1.05);
+  assert.equal(interpolatedScale(160, stops), 1.2);
+  assert.throws(() => parseScalingStops("100,1"), /at least two stops/);
+});
+
+test("taking the wall clock creates the persistent fallen-clock scene", async () => {
+  const handlers = compile(await readFile(new URL("../game/scripts/main.ana", import.meta.url), "utf8"));
+  const handler = (event) => handlers.find((candidate) => candidate.event === event);
+  assert.deepEqual(instantiate(handler("entity.take"), ["clock"], { game: {} }).map(({ op, target, value }) => [op, target, value]), [
+    ["walk", "clock", undefined], ["hide", "clock", undefined], ["show", "fallen_clock", undefined],
+    ["set", "game.clock_fallen", true], ["say", undefined, "Ooops"]
+  ]);
+  assert.deepEqual(instantiate(handler("room.enter"), ["hall"], { game: { door_open: false, clock_fallen: true } }).map(({ op, target }) => [op, target]), [
+    ["hide", "clock"], ["show", "fallen_clock"]
+  ]);
+});
+
 test("the demo door can close, reopen, and be walked through", async () => {
   const handlers = compile(await readFile(new URL("../game/scripts/main.ana", import.meta.url), "utf8"));
   const handler = (event) => handlers.find((candidate) => candidate.event === event);
@@ -171,5 +193,8 @@ test("the demo door can close, reopen, and be walked through", async () => {
   assert.deepEqual(instantiate(handler("entity.open"), ["door"], { game: { door_unlocked: true } }).map(({ op, target }) => [op, target]), [
     ["walk", "door"], ["set", "door.open"], ["set", "door.graphic"], ["set", "game.door_open"]
   ]);
-  assert.deepEqual(instantiate(handler("entity.walk"), ["door"], { game: {} }).map(({ op, target }) => [op, target]), [["walk", "door"]]);
+  assert.deepEqual(instantiate(handler("entity.walk"), ["door"], { game: { door_open: false } }).map(({ op, target }) => [op, target]), [["walk", "door"]]);
+  assert.deepEqual(instantiate(handler("entity.walk"), ["door"], { game: { door_open: true } }).map(({ op, target, room }) => [op, target, room]), [
+    ["walk", "door", undefined], ["enter", undefined, "garden"]
+  ]);
 });

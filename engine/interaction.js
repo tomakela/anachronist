@@ -68,6 +68,32 @@ export function retainedRoomEntities(states, room, create) {
   return states[room] || (states[room] = create());
 }
 
+/**
+ * Parse a room's semicolon-separated `y, scale` perspective stops. At least two
+ * stops are required so that a room cannot silently declare a useless curve.
+ */
+export function parseScalingStops(value, label = "player_scaling") {
+  if (!value) return null;
+  const stops = value.split(";").map((entry) => {
+    const parts = entry.split(",").map((part) => Number(part.trim()));
+    if (parts.length !== 2 || !parts.every(Number.isFinite) || parts[1] <= 0) throw new Error(`${label}: expected y, positive-scale pairs`);
+    return parts;
+  }).sort((a, b) => a[0] - b[0]);
+  if (stops.length < 2) throw new Error(`${label}: requires at least two stops`);
+  for (let i = 1; i < stops.length; i++) if (stops[i][0] === stops[i - 1][0]) throw new Error(`${label}: y coordinates must be unique`);
+  return stops;
+}
+
+/** Linearly interpolate a scale, clamping positions beyond the end stops. */
+export function interpolatedScale(y, stops) {
+  if (!stops || y <= stops[0][0]) return stops?.[0][1] ?? 1;
+  for (let i = 1; i < stops.length; i++) {
+    const [endY, endScale] = stops[i], [startY, startScale] = stops[i - 1];
+    if (y <= endY) return startScale + (endScale - startScale) * (y - startY) / (endY - startY);
+  }
+  return stops.at(-1)[1];
+}
+
 const pointInside = ([x, y], [bx, by, bw, bh]) => x >= bx && y >= by && x < bx + bw && y < by + bh;
 
 const title = (value) => value[0].toUpperCase() + value.slice(1);

@@ -41,6 +41,10 @@ Each room's mutable entity state is retained between visits, so a taken object
 cannot reappear at its old room position when the player returns. The demo also
 records key acquisition in the persistent `game.key_taken` global for its game
 logic.
+Room `player_scaling` perspective stops scale the actor according to its y
+position, with linear interpolation between two or more `y,scale` pairs. Taking
+the hall clock now runs a multi-step scene: it disappears from the wall, appears
+fallen on the floor, and remains fallen after a round trip to the garden.
 Rooms may also declare rectangular `[trigger.name]` regions. Crossing into one
 dispatches `trigger.enter(name)`; a player spawned inside a region must leave it
 before that region can fire, preventing immediate room-transition loops. The
