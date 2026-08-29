@@ -221,10 +221,10 @@ export class Runtime extends DeterministicVM {
     if (actor) actor.moving = false;
     this.actionSentence = "";
   }
-  targetAt(x, y) {
+  targetAt(x, y, excludeFirst = true) {
     const layout = this.inventoryLayout();
-    const inventoryTarget = this.inventory.slice(layout.page.start, layout.page.end).find((id, i) => id !== this.firstObject && inside(x, y, [layout.origin[0] + i * layout.itemWidth, layout.origin[1], layout.itemWidth, layout.itemHeight]));
-    return inventoryTarget || entityTargetAt([x, y], this.entities, (entity, point) => entity.id !== this.firstObject && this.hitEntity(entity, point));
+    const inventoryTarget = this.inventory.slice(layout.page.start, layout.page.end).find((id, i) => (!excludeFirst || id !== this.firstObject) && inside(x, y, [layout.origin[0] + i * layout.itemWidth, layout.origin[1], layout.itemWidth, layout.itemHeight]));
+    return inventoryTarget || entityTargetAt([x, y], this.entities, (entity, point) => (!excludeFirst || entity.id !== this.firstObject) && this.hitEntity(entity, point));
   }
   hitEntity(entity, point) {
     const hotspot = entityHotspot(entity); if (hotspot) return pointInHotspot(point, hotspot);
@@ -272,7 +272,7 @@ export class Runtime extends DeterministicVM {
     const composing = this.activeVerb ? [title(this.activeVerb), this.firstObject && this.label(this.firstObject), this.firstObject && this.ui[`verb.${this.activeVerb}`]?.object_preposition].filter(Boolean).join(" ") : "";
     const walking = this.queue[0]?.op === "walk" ? this.phrase("walk_to", { target: this.label(this.queue[0].target) }) : "";
     this.textRegion(this.ui.sentence_region, scene.actionSentence || walking || hoverSentence || composing);
-    const suggestedVerb = hoverTarget && !this.activeVerb ? this.suggestedVerb(hoverTarget) : null;
+    const suggestedVerb = hoverTarget ? this.suggestedVerb(hoverTarget) : null;
     for (const verb of list(this.ui.verb_panel.verbs)) { const spec = this.ui[`verb.${verb}`]; this.panel(spec.rect, spec.label, this.activeVerb === verb, suggestedVerb === verb); }
     if (this.coarsePointer) this.cursor(this.touchCursor);
     c.restore();

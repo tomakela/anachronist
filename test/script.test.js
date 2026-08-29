@@ -329,6 +329,23 @@ test("item-use transactions can consume an inventory item", () => {
   ]);
 });
 
+test("item-use transactions can replace an inventory item in place", () => {
+  const commands = instantiate(compile(`on fountain.use_item(item) {
+    replace coffee_cup with water in inventory
+  }`)[0], ["coffee_cup", "fountain"]);
+  const world = { inventory: ["coin", "coffee_cup", "key"], items: { water: {} }, entities: {
+    player: { visible: "true" }, fountain: { visible: "true" }
+  }, rooms: {} };
+  assert.deepEqual(prepareItemUse(commands, world, ITEM_USE_PROTOCOL).map(({ op }) => op), ["animate", "replace"]);
+
+  const runtime = fallbackRuntime();
+  Object.assign(runtime, { inventory: [...world.inventory], inventoryEntities: { coffee_cup: { position: [1, 2] } }, items: { ...runtime.items, water: { label: "cup of water" } } });
+  runtime.execute(commands[0]);
+  assert.deepEqual(runtime.inventory, ["coin", "water", "key"]);
+  assert.equal(runtime.inventoryEntities.water.label, "cup of water");
+  assert.equal(runtime.inventoryEntities.coffee_cup, undefined);
+});
+
 test("an invalid item-use tail rejects the entire transaction", () => {
   const commands = [{ op: "walk", actor: "player", target: "key" }, { op: "take", target: "key" }, { op: "walk", actor: "player", target: "missing" }];
   const world = { inventory: [], entities: { player: { visible: "true" }, key: { visible: "true" } }, rooms: {} };
@@ -424,6 +441,20 @@ test("the secondary pointer action looks at the touched target", () => {
     perform: (...args) => calls.push(args)
   });
   runtime.inputAction("pointer_secondary", { event: { preventDefault() {} }, point: [10, 10] });
+  assert.deepEqual(calls, [["look", "door"]]);
+  assert.equal(runtime.activeVerb, null);
+  assert.equal(runtime.firstObject, null);
+});
+
+test("the secondary pointer can suggest the object already selected by another verb", () => {
+  const runtime = fallbackRuntime(), calls = [];
+  Object.assign(runtime, {
+    interactive: true, activeVerb: "use", firstObject: "door", message: "", width: 320, height: 200,
+    inventoryLayout: () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} }),
+    targetAt: (x, y, excludeFirst) => { assert.equal(excludeFirst, false); return "door"; },
+    perform: (...args) => calls.push(args)
+  });
+  runtime.inputAction("pointer_secondary", { point: [10, 10] });
   assert.deepEqual(calls, [["look", "door"]]);
   assert.equal(runtime.activeVerb, null);
   assert.equal(runtime.firstObject, null);
