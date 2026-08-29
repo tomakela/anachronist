@@ -179,8 +179,16 @@ test("taking the wall clock creates the persistent fallen-clock scene", async ()
     ["walk", "clock", undefined], ["hide", "clock", undefined], ["show", "fallen_clock", undefined],
     ["set", "game.clock_fallen", true], ["say", undefined, "Ooops"]
   ]);
-  assert.deepEqual(instantiate(handler("room.enter"), ["hall"], { game: { door_open: false, clock_fallen: true } }).map(({ op, target }) => [op, target]), [
+  assert.deepEqual(instantiate(handler("room.enter"), ["hall"], { game: { door_open: false, clock_fallen: true, fallen_clock_taken: false } }).map(({ op, target }) => [op, target]), [
     ["hide", "clock"], ["show", "fallen_clock"]
+  ]);
+  assert.deepEqual(instantiate(handler("entity.take"), ["fallen_clock"], { game: { clock_fallen: true, fallen_clock_taken: false } }).map(({ op, target, value }) => [op, target, value]), [
+    ["walk", "fallen_clock", undefined], ["take", "fallen_clock", undefined],
+    ["set", "game.fallen_clock_taken", true], ["say", undefined, "Taken."]
+  ]);
+  assert.deepEqual(instantiate(handler("room.enter"), ["garden"], { game: { door_open: true, clock_fallen: true, fallen_clock_taken: true } }), []);
+  assert.deepEqual(instantiate(handler("room.enter"), ["hall"], { game: { door_open: false, clock_fallen: true, fallen_clock_taken: true } }).map(({ op, target }) => [op, target]), [
+    ["hide", "clock"], ["hide", "fallen_clock"]
   ]);
 });
 
