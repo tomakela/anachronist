@@ -109,6 +109,32 @@ export function touchMoved(start, point, tolerance) {
   return Math.hypot(point[0] - start[0], point[1] - start[1]) > amount;
 }
 
+/** Advance a walk in base-speed samples so fast movement cannot jump barriers or triggers. */
+export function advanceWalk(position, target, speed, multiplier, walkable, visit = () => {}) {
+  let point = [...position], travelled = 0;
+  const budget = Math.min(Math.hypot(target[0] - point[0], target[1] - point[1]), speed * multiplier);
+  while (travelled < budget) {
+    const remaining = Math.hypot(target[0] - point[0], target[1] - point[1]);
+    const amount = Math.min(speed, budget - travelled, remaining);
+    const next = remaining <= amount ? [...target] : [point[0] + (target[0] - point[0]) / remaining * amount, point[1] + (target[1] - point[1]) / remaining * amount];
+    if (!walkable(next)) return { point, reached: false, blocked: true };
+    point = next; travelled += amount; visit(point);
+    if (remaining <= amount) break;
+  }
+  return { point, reached: point[0] === target[0] && point[1] === target[1], blocked: false };
+}
+
+/** Mark only the current explicitly skippable scene for safe acceleration. */
+export function accelerateCommandQueue(queue) {
+  const skipping = queue[0]?.skippable === true;
+  for (const command of queue) {
+    if (skipping && !command.skippable) break;
+    command.fast = true;
+    command.skipPresentation = skipping;
+  }
+  return skipping;
+}
+
 /** True when a point belongs to the non-walkable interface at the screen foot. */
 export function interfacePoint(x, y, ui, width, height) {
   const regions = [ui.sentence_region?.rect, ui.verb_panel?.region_rect, ui.inventory_panel?.rect]
