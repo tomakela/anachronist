@@ -81,8 +81,10 @@ decorative entities that should be drawn but ignored by pointing and verbs. A
 room may also name a bitmap with `walk_mask`; only
 its opaque, non-black pixels permit player movement (the mask is scaled to the
 logical room size). A walk stops at the first step that would enter a masked-out
-pixel. Whenever an item is added, the inventory automatically moves to its last
-row so the new item is visible.
+pixel. Whenever an item is picked up, the inventory automatically moves to its
+last row so the new item is visible. Items granted together when entering a room
+do not advance the inventory, so a starting inventory is shown from the first
+row.
 
 Verb sentence prepositions are package data (`preposition = at` makes the
 **Look** action read “Look at …”, while `object_preposition = on` produces
