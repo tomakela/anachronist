@@ -7,6 +7,12 @@ export function verbSentence(ui, label, verb, first, second = null) {
   return words.filter(Boolean).join(" ");
 }
 
+/** Return a deterministic logical-pixel offset for an active screen shake. */
+export function shakeOffset(ticksRemaining, amplitude) {
+  if (ticksRemaining <= 0 || amplitude <= 0) return [0, 0];
+  return [[-amplitude, 0], [amplitude, 0], [0, -amplitude], [0, amplitude]][ticksRemaining % 4];
+}
+
 /**
  * Validate an item-use transaction against a snapshot of the world and remove
  * acquisition commands which have already happened.  Returning null rejects

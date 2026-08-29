@@ -39,6 +39,7 @@ export function compile(source) {
     if (op === "enter") { take("room"); const room = take().value; take("at"); const spawn = take().value; take(";"); return { op, room, spawn }; }
     if (op === "set") { const target = take().value; take("="); const value = expression(); take(";"); return { op, target, value }; }
     if (op === "wait") { const ticks = take().value; take("ticks"); take(";"); return { op, ticks }; }
+    if (op === "shake") { const ticks = take().value; take("ticks"); take(";"); return { op, ticks }; }
     if (op === "face") { const actor = take().value; const direction = take().value; take(";"); return { op, actor, direction }; }
     throw new Error(`script: unsupported statement ${op}`);
   };
