@@ -99,8 +99,8 @@ export class Runtime {
   }
   inputAction(action, detail = {}) {
     if (!this.interactive && action !== "cancel" && action !== "dialogue_advance") return;
-    if (action === "pointer_primary") return this.primaryAt(detail.point);
-    if (action === "pointer_secondary") return this.secondaryAt(detail.point);
+    if (action === "pointer_primary") return this.pointer(detail.event, 0, detail.point, detail.fast);
+    if (action === "pointer_secondary") return this.pointer(detail.event, 2, detail.point, detail.fast);
     if (action === "focus_next") return this.moveFocus(1);
     if (action === "focus_previous") return this.moveFocus(-1);
     if (action === "inventory_next") return this.moveInventoryFocus(1);
@@ -290,15 +290,14 @@ export class Runtime {
     if (!this.touch.long && !this.touch.moved) {
       const button = performance.now() - this.touch.startedAt >= this.longTouchMilliseconds ? 2 : 0;
       this.touch.long = button === 2;
-      this.dispatchPhysicalTouch(button === 2 ? "long_press" : "tap", event, this.touchCursor);
       const now = performance.now(), fast = button === 0 && this.lastTap && now - this.lastTap.time <= this.doubleTouchMilliseconds && !touchMoved(this.lastTap.point, this.touchCursor, this.doubleTouchMoveTolerance);
-      this.pointer(event, button, this.touchCursor, fast);
+      this.dispatchPhysicalTouch(button === 2 ? "long_press" : "tap", event, this.touchCursor, fast);
       if (button === 0) this.lastTap = { time: now, point: [...this.touchCursor] };
     }
     this.touch = null;
   }
   cancelTouch(event) { if (this.touch?.id === event.pointerId) { clearTimeout(this.touch.timer); this.touch = null; } }
-  dispatchPhysicalTouch(gesture, event, point) { event.preventDefault(); const action = this.input.touch.get(gesture); if (action) this.inputAction(action, { point, event }); }
+  dispatchPhysicalTouch(gesture, event, point, fast = false) { event.preventDefault(); const action = this.input.touch.get(gesture); if (action) this.inputAction(action, { point, event, fast }); }
   pointer(event, button = event.button, point = this.eventPoint(event), fast = false) {
     event.preventDefault();
     if (fast && this.queue.length) { this.accelerateCommands(); return; }
