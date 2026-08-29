@@ -177,6 +177,13 @@ export function entityIsInteractive(entity) {
   return entity?.visible !== "false" && entity?.interactive !== "false";
 }
 
+/** Resolve and validate the verb suggested by an object's package metadata. */
+export function objectSuggestedVerb(object, availableVerbs, fallback = "look") {
+  const verb = object?.suggested_verb || fallback;
+  if (!availableVerbs.includes(verb)) throw new Error(`suggested_verb: unknown verb ${verb}`);
+  return verb;
+}
+
 /** Parse an absolute room-space rectangle or polygon declared by an entity. */
 export function entityHotspot(entity) {
   if (entity.hotspot_rect) {

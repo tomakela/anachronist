@@ -5,7 +5,7 @@ import { bitmapPixels, loadBitmaps } from "./bitmaps.js";
 import { parseActionBindings } from "./input.js";
 import { SaveStorage, snapshotRuntime, validateSnapshot } from "./save.js";
 import { DeterministicVM } from "./vm.js";
-import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
+import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, objectSuggestedVerb, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
 
 const root = typeof document === "undefined" ? null : document.querySelector("#engine-host");
 const entry = typeof document === "undefined" ? null : document.querySelector('meta[name="game-entry"]')?.content;
@@ -239,6 +239,10 @@ export class Runtime extends DeterministicVM {
     const columns = Math.max(1, Math.floor((this.width - origin[0] - arrowWidth) / itemWidth)), page = inventoryPage(this.inventory.length, this.inventoryRow, columns); this.inventoryRow = page.row;
     return { origin, itemWidth, itemHeight, page, upRect: [this.width - arrowWidth, origin[1], arrowWidth, itemHeight / 2], downRect: [this.width - arrowWidth, origin[1] + itemHeight / 2, arrowWidth, itemHeight / 2] };
   }
+  suggestedVerb(target) {
+    const object = this.inventory.includes(target) ? this.items[target] : this.entities[target];
+    return objectSuggestedVerb(object, list(this.ui.verb_panel.verbs), this.game.protocol.look_verb);
+  }
   scrollInventoryToEnd() {
     const spec = this.ui.inventory_panel, origin = tuple(spec.origin, 2, "inventory"), itemWidth = integer(spec.item_width, "item width"), arrowWidth = integer(spec.arrow_width || "16", "arrow width");
     const columns = Math.max(1, Math.floor((this.width - origin[0] - arrowWidth) / itemWidth));
@@ -268,7 +272,8 @@ export class Runtime extends DeterministicVM {
     const composing = this.activeVerb ? [title(this.activeVerb), this.firstObject && this.label(this.firstObject), this.firstObject && this.ui[`verb.${this.activeVerb}`]?.object_preposition].filter(Boolean).join(" ") : "";
     const walking = this.queue[0]?.op === "walk" ? this.phrase("walk_to", { target: this.label(this.queue[0].target) }) : "";
     this.textRegion(this.ui.sentence_region, scene.actionSentence || walking || hoverSentence || composing);
-    for (const verb of list(this.ui.verb_panel.verbs)) { const spec = this.ui[`verb.${verb}`]; this.panel(spec.rect, spec.label, this.activeVerb === verb); }
+    const suggestedVerb = hoverTarget && !this.activeVerb ? this.suggestedVerb(hoverTarget) : null;
+    for (const verb of list(this.ui.verb_panel.verbs)) { const spec = this.ui[`verb.${verb}`]; this.panel(spec.rect, spec.label, this.activeVerb === verb, suggestedVerb === verb); }
     if (this.coarsePointer) this.cursor(this.touchCursor);
     c.restore();
   }
@@ -309,7 +314,7 @@ export class Runtime extends DeterministicVM {
     this.ctx.fillStyle = spec.background || this.ui.palette.panel; this.ctx.fillRect(x, y, width, height);
     this.ctx.fillStyle = spec.text || this.ui.palette.text; this.ctx.textAlign = "center"; this.ctx.textBaseline = "middle"; this.ctx.fillText(text, x + width / 2, y + height / 2, width - padding * 2);
   }
-  panel(rect, label, active) { const [x, y, w, h] = tuple(rect, 4, "panel"); this.ctx.fillStyle = active ? this.ui.palette.active : this.ui.palette.panel; this.ctx.fillRect(x, y, w, h); this.ctx.strokeStyle = this.ui.palette.border; this.ctx.strokeRect(x + .5, y + .5, w - 1, h - 1); this.ctx.strokeStyle = this.ui.palette.shadow; this.ctx.beginPath(); this.ctx.moveTo(x + 2, y + h - 2); this.ctx.lineTo(x + w - 2, y + h - 2); this.ctx.lineTo(x + w - 2, y + 2); this.ctx.stroke(); this.ctx.fillStyle = this.ui.palette.text; this.ctx.font = this.ui.interface.font; this.ctx.textAlign = "left"; this.ctx.textBaseline = "middle"; this.ctx.fillText(label, x + 5, y + h / 2); }
+  panel(rect, label, active, suggested = false) { const [x, y, w, h] = tuple(rect, 4, "panel"); this.ctx.fillStyle = active ? this.ui.palette.active : suggested ? (this.ui.palette.suggested || this.ui.palette.panel) : this.ui.palette.panel; this.ctx.fillRect(x, y, w, h); this.ctx.strokeStyle = this.ui.palette.border; this.ctx.strokeRect(x + .5, y + .5, w - 1, h - 1); this.ctx.strokeStyle = this.ui.palette.shadow; this.ctx.beginPath(); this.ctx.moveTo(x + 2, y + h - 2); this.ctx.lineTo(x + w - 2, y + h - 2); this.ctx.lineTo(x + w - 2, y + 2); this.ctx.stroke(); this.ctx.fillStyle = this.ui.palette.text; this.ctx.font = this.ui.interface.font; this.ctx.textAlign = "left"; this.ctx.textBaseline = "middle"; this.ctx.fillText(label, x + 5, y + h / 2); }
   inventoryArrow(rect, direction, enabled) {
     const [x, y, w, h] = rect, centerX = x + w / 2, centerY = y + h / 2, sign = direction === "up" ? -1 : 1;
     this.ctx.fillStyle = this.ui.palette.panel; this.ctx.fillRect(x, y, w, h); this.ctx.strokeStyle = this.ui.palette.border; this.ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
