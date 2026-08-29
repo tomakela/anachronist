@@ -2,7 +2,7 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { loadBitmaps } from "./bitmaps.js";
-import { enteredTriggers, prepareItemUse, retainedRoomEntities, verbSentence } from "./interaction.js";
+import { enteredTriggers, interpolatedScale, parseScalingStops, prepareItemUse, retainedRoomEntities, verbSentence } from "./interaction.js";
 
 const root = document.querySelector("#engine-host");
 const entry = document.querySelector('meta[name="game-entry"]')?.content;
@@ -52,6 +52,7 @@ class Runtime {
   commands(event, args) { const handler = this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length); return handler ? instantiate(handler, args, this.scriptState()) : null; }
   enter(id, spawn) {
     const room = this.rooms[id]; if (!room) throw new Error(`Unknown room ${id}`); this.room = id;
+    this.playerScaling = parseScalingStops(room.room.player_scaling, `${id}.room.player_scaling`);
     this.entities = retainedRoomEntities(this.roomEntities, id, () => {
       const entities = Object.create(null);
       for (const [section, values] of Object.entries(room)) if (section.startsWith("entity.")) entities[section.slice(7)] = { id: section.slice(7), ...values, position: tuple(values.position, 2, `${section}.position`) };
@@ -117,7 +118,7 @@ class Runtime {
   verbSentence(verb, first, second) { return verbSentence(this.ui, (id) => this.label(id), verb, first, second); }
   dismissMessage() { this.message = ""; this.messageTicks = 0; this.messageKind = ""; if (!this.queue.length) this.actionSentence = ""; }
   clearSelection() { this.activeVerb = null; this.firstObject = null; }
-  bounds(entity) { const spec = this.graphics[`graphic.${entity.graphic}`], size = tuple(entity.size || `${spec.width},${spec.height}`, 2, entity.id), origin = entity.origin ? tuple(entity.origin, 2, `${entity.id}.origin`) : [size[0] / 2, size[1] / 2]; return [entity.position[0] - origin[0], entity.position[1] - origin[1], ...size]; }
+  bounds(entity) { const spec = this.graphics[`graphic.${entity.graphic}`], baseSize = tuple(entity.size || `${spec.width},${spec.height}`, 2, entity.id), baseOrigin = entity.origin ? tuple(entity.origin, 2, `${entity.id}.origin`) : [baseSize[0] / 2, baseSize[1] / 2], scale = entity.id === "player" ? interpolatedScale(entity.position[1], this.playerScaling) : 1, size = baseSize.map((value) => value * scale), origin = baseOrigin.map((value) => value * scale); return [entity.position[0] - origin[0], entity.position[1] - origin[1], ...size]; }
   step() {
     this.tick++;
     if (this.message) { if (--this.messageTicks <= 0) this.dismissMessage(); return; }
@@ -136,7 +137,7 @@ class Runtime {
     else if (command.op === "pause") return;
     else if (command.op === "face") this.entities[command.actor].facing = command.direction;
   }
-  updateTriggers(point) { const state = enteredTriggers(point, this.triggers, this.occupiedTriggers); this.occupiedTriggers = state.occupied; for (const id of state.entered) this.dispatch("trigger.enter", [id]); }
+  updateTriggers(point) { const state = enteredTriggers(point, this.triggers, this.occupiedTriggers); this.occupiedTriggers = state.occupied; for (const id of state.entered) if (!this.queue.some(({ op }) => op === "enter")) this.dispatch("trigger.enter", [id]); }
   animationDuration(action, facing) { const animation = this.animations[`animation.${action}_${facing || "down"}`]; if (!animation?.frames) return 1; return animation.frames.split(";").reduce((sum, frame) => sum + tuple(frame.trim(), 5, "animation frame")[4], 0); }
   frame(now) { if (now - this.last >= 1000 / integer(this.game.runtime.ticks_per_second, "tick rate")) { this.step(); this.last = now; } this.draw(); requestAnimationFrame((time) => this.frame(time)); }
   draw() {
@@ -156,8 +157,12 @@ class Runtime {
   label(id) { return this.entities[id]?.label || this.inventoryEntities[id]?.label || id?.replaceAll("_", " ") || ""; }
   sprite(entity) {
     const [x, y, w, h] = this.bounds(entity), graphic = this.graphics[`graphic.${entity.graphic}`], bitmap = this.bitmaps[entity.graphic], animation = entity.id === "player" ? this.animations[`animation.${entity.action || (entity.moving ? "walking" : "idle")}_${entity.facing || "down"}`] : graphic;
-    if (bitmap) { if (animation?.frames) { const frames = animation.frames.split(";").map((frame) => tuple(frame.trim(), 5, "animation frame")), cycle = frames.reduce((sum, frame) => sum + frame[4], 0); let phase = entity.action ? Math.max(0, cycle - entity.actionTicks) % cycle : this.tick % cycle, selected = frames[0]; for (const frame of frames) { if (phase < frame[4]) { selected = frame; break; } phase -= frame[4]; } this.ctx.drawImage(bitmap, ...selected.slice(0, 4), Math.round(x), Math.round(y), w, h); } else this.ctx.drawImage(bitmap, Math.round(x), Math.round(y), w, h); return; }
+    if (bitmap) { if (animation?.frames) { const frames = animation.frames.split(";").map((frame) => tuple(frame.trim(), 5, "animation frame")), cycle = frames.reduce((sum, frame) => sum + frame[4], 0); let phase = entity.action ? Math.max(0, cycle - entity.actionTicks) % cycle : this.tick % cycle, selected = frames[0]; for (const frame of frames) { if (phase < frame[4]) { selected = frame; break; } phase -= frame[4]; } this.drawBitmap(entity, bitmap, selected.slice(0, 4), x, y, w, h); } else this.drawBitmap(entity, bitmap, null, x, y, w, h); return; }
     this.ctx.fillStyle = this.graphics[`graphic.${entity.graphic}`]?.missing_color || "#ff00ff"; this.ctx.fillRect(Math.round(x), Math.round(y), w, h);
+  }
+  drawBitmap(entity, bitmap, source, x, y, w, h) {
+    const angle = Number(entity.rotation || 0) * Math.PI / 180, args = source ? [bitmap, ...source, -w / 2, -h / 2, w, h] : [bitmap, -w / 2, -h / 2, w, h];
+    this.ctx.save(); this.ctx.translate(Math.round(x + w / 2), Math.round(y + h / 2)); if (angle) this.ctx.rotate(angle); this.ctx.drawImage(...args); this.ctx.restore();
   }
   textRegion(spec, text) { const [x, y, w, h] = tuple(spec.rect, 4, "text region"), padding = integer(spec.padding || "4", "text padding"); this.ctx.fillStyle = this.ui.palette.panel; this.ctx.fillRect(x, y, w, h); this.ctx.fillStyle = this.ui.palette.text; this.ctx.font = this.ui.interface.font; this.ctx.textAlign = "left"; this.ctx.textBaseline = "middle"; this.ctx.fillText(text || "", x + padding, y + h / 2, w - padding * 2); }
   speech(actor, text) {

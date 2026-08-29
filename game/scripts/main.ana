@@ -4,6 +4,7 @@ on game.start() {
     set game.key_taken = false;
     set game.door_open = false;
     set game.door_unlocked = false;
+    set game.clock_fallen = false;
     enter room hall at entry;
     narrate "Find a way into the garden.";
 }
@@ -16,6 +17,9 @@ on entity.look(target) {
 on entity.walk(target) {
     if (target == door) {
         walk player to door;
+        if (game.door_open == true) {
+            enter room garden at entry;
+        }
     } else {
         if (target == gate) {
             walk player to gate;
@@ -41,16 +45,27 @@ on room.enter(room) {
             set door.open = true;
             set door.graphic = placeholder.door_open;
         }
+        if (game.clock_fallen == true) {
+            hide clock;
+            show fallen_clock;
+        }
     }
 }
 
 on entity.take(target) {
     walk player to target;
-    take target;
-    if (target == key) {
-        set game.key_taken = true;
+    if (target == clock) {
+        hide clock;
+        show fallen_clock;
+        set game.clock_fallen = true;
+        say "Ooops";
+    } else {
+        take target;
+        if (target == key) {
+            set game.key_taken = true;
+        }
+        say "Taken.";
     }
-    say "Taken.";
 }
 
 // Runtime expansion is atomic: none of these commands can start until the
