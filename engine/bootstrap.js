@@ -6,6 +6,7 @@ import { bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityRen
 import { loadBitmaps } from "./bitmaps.js";
 import { parseActionBindings, reconcileTargetFocus } from "./input.js";
 import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
+import { SaveStorage, snapshotRuntime, validateSnapshot } from "./save.js";
 import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
 
 const root = typeof document === "undefined" ? null : document.querySelector("#engine-host");
@@ -52,6 +53,9 @@ class Runtime {
 export class Runtime {
   constructor(game, ui, rooms, items, graphics, animations, bitmaps, handlers) {
     Object.assign(this, { game, ui, rooms, items, graphics, animations, bitmaps, handlers });
+    this.saveIdentity = { packageId: game.package.id, formatVersion: game.save?.format_version };
+    if (!this.saveIdentity.packageId || !this.saveIdentity.formatVersion) throw new Error("package.id and save.format_version are required");
+    this.storage = new SaveStorage(window.localStorage, this.saveIdentity.packageId);
     this.entities = Object.create(null); this.roomEntities = Object.create(null); this.inventory = []; this.inventoryEntities = Object.create(null); this.globals = { ...game.$variables };
     this.roomState = Object.fromEntries(Object.entries(rooms).map(([id, room]) => [id, { ...room.$variables }]));
     this.activeVerb = null; this.firstObject = null; this.hoverTarget = null; this.queue = []; this.message = ""; this.messageKind = ""; this.messageTicks = 0; this.actionSentence = ""; this.tick = 0; this.shakeTicks = 0; this.inventoryRow = 0;
@@ -156,8 +160,8 @@ export class Runtime {
     const active = this.accessibilityTargets.querySelector('[aria-selected="true"]'); if (active) this.canvas.setAttribute("aria-activedescendant", active.id); else this.canvas.removeAttribute("aria-activedescendant");
   }
   settings() {
-    const wrapper = document.createElement("div"); wrapper.className = "mobile-settings"; wrapper.hidden = !this.coarsePointer;
-    const button = document.createElement("button"); button.type = "button"; button.textContent = "⚙"; button.ariaLabel = "Touch settings"; button.ariaExpanded = "false";
+    const wrapper = document.createElement("div"); wrapper.className = "mobile-settings";
+    const button = document.createElement("button"); button.type = "button"; button.textContent = "☰"; button.ariaLabel = "Game menu"; button.ariaExpanded = "false";
     const choices = document.createElement("fieldset"); choices.hidden = true;
     const legend = document.createElement("legend"); legend.textContent = "Touch cursor"; choices.append(legend);
     for (const [value, label] of [["direct", "Point where I touch"], ["drag", "Drag cursor"]]) {
@@ -169,9 +173,39 @@ export class Runtime {
     fullscreen.hidden = !document.fullscreenEnabled; fullscreen.addEventListener("click", () => this.toggleFullscreen());
     document.addEventListener("fullscreenchange", () => { fullscreen.textContent = document.fullscreenElement ? "Exit full screen" : "Enter full screen"; });
     choices.append(fullscreen);
+    for (const [label, action] of [["Save", () => this.saveGame()], ["Load", () => this.loadGame()], ["Restart", () => this.restartGame()]]) {
+      const control = document.createElement("button"); control.type = "button"; control.className = "menu-action"; control.textContent = label; control.addEventListener("click", action); choices.append(control);
+    }
     button.addEventListener("click", () => { choices.hidden = !choices.hidden; button.ariaExpanded = String(!choices.hidden); });
     wrapper.append(button, choices); return wrapper;
   }
+  reportSaveError(action, error) { window.alert(`${action} failed: ${error.message}`); console.error(error); }
+  saveGame() {
+    try {
+      if (this.storage.exists() && !window.confirm("Overwrite your existing saved progress?")) return;
+      this.storage.write(snapshotRuntime(this, this.saveIdentity));
+      window.alert("Game saved.");
+    } catch (error) { this.reportSaveError("Save", error); }
+  }
+  loadGame() {
+    try {
+      const state = validateSnapshot(this.storage.read(), this.saveIdentity, this.rooms, this.items);
+      this.applySave(state);
+      window.alert("Game loaded.");
+    } catch (error) { this.reportSaveError("Load", error); }
+  }
+  applySave(state) {
+    // Derive everything which can throw before assigning a single live field.
+    const room = this.rooms[state.room], interactive = room.room.interactive !== "false", interfaceVisible = room.room.interface_visible !== "false" && room.room.fullscreen !== "true";
+    const playerScaling = parseScalingStops(room.room.player_scaling || "0,1; 1,1", `${state.room}.room.player_scaling`);
+    const mask = room.room.walk_mask;
+    const walkable = mask ? bitmapWalkRegion(this.bitmaps[mask], this.width, this.height) : () => true;
+    const triggers = Object.fromEntries(Object.entries(room).filter(([section]) => section.startsWith("trigger.")).map(([section, values]) => [section.slice(8), tuple(values.rect, 4, `${section}.rect`)]));
+    const occupiedTriggers = enteredTriggers(state.entities[state.room].player.position, triggers).occupied;
+    Object.assign(this, { room: state.room, roomEntities: state.entities, entities: state.entities[state.room], globals: state.globals, roomState: state.roomState, inventory: state.inventory, inventoryEntities: state.inventoryEntities, inventoryRow: state.inventoryRow, interactive, interfaceVisible, playerScaling, walkable, triggers, occupiedTriggers });
+    this.queue = []; this.message = ""; this.messageKind = ""; this.messageTicks = 0; this.actionSentence = ""; this.clearSelection(); this.hoverTarget = null;
+  }
+  restartGame() { if (window.confirm("Restart and discard all current progress?")) window.location.reload(); }
   async toggleFullscreen() {
     if (document.fullscreenElement) {
       await document.exitFullscreen(); screen.orientation?.unlock?.(); return;

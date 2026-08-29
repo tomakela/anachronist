@@ -9,6 +9,37 @@ import { bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsI
 import { loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
 import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
 import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
+import { SaveStorage, snapshotRuntime, stableStringify, validateSnapshot } from "../engine/save.js";
+
+test("runtime saves deterministically round-trip durable world state", () => {
+  const runtime = {
+    room: "hall", globals: { door_open: true }, roomState: { hall: { visits: 2 } },
+    roomEntities: { garden: { gate: { visible: "false", position: [10, 20] } } },
+    entities: { door: { visible: "false", position: [44, 60] }, player: { position: [123, 77], moving: true, action: "use", actionTicks: 9 } },
+    inventory: ["key"], inventoryEntities: { key: { label: "brass key", position: [8, 9] } }, inventoryRow: 1
+  };
+  const identity = { packageId: "anachronist", formatVersion: "1" }, rooms = { hall: {}, garden: {} }, items = { key: {} };
+  const saved = snapshotRuntime(runtime, identity), encoded = stableStringify(saved);
+  assert.equal(encoded, stableStringify(snapshotRuntime(runtime, identity)));
+  const state = validateSnapshot(JSON.parse(encoded), identity, rooms, items);
+  assert.deepEqual(state.inventory, ["key"]); assert.deepEqual(state.globals, { door_open: true });
+  assert.equal(state.entities.hall.door.visible, "false"); assert.deepEqual(state.entities.hall.player.position, [123, 77]);
+  assert.equal(state.entities.hall.player.actionTicks, 0); assert.equal(state.entities.garden.gate.visible, "false");
+});
+
+test("save validation rejects corrupt and incompatible data before returning state", () => {
+  const identity = { packageId: "anachronist", formatVersion: "1" }, rooms = { hall: {} }, items = { key: {} };
+  assert.throws(() => validateSnapshot(null, identity, rooms, items), /not an object/);
+  assert.throws(() => validateSnapshot({ package_id: "another", format_version: "1", state: {} }, identity, rooms, items), /different game/);
+  assert.throws(() => validateSnapshot({ package_id: "anachronist", format_version: "2", state: {} }, identity, rooms, items), /not compatible/);
+});
+
+test("save storage uses a package-scoped key and reports corrupt JSON", () => {
+  const values = new Map(), storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+  const saves = new SaveStorage(storage, "demo"); saves.write({ good: true });
+  assert.equal(values.has("anachronist.save.demo"), true); assert.deepEqual(saves.read(), { good: true });
+  values.set("anachronist.save.demo", "{"); assert.throws(() => saves.read(), /corrupt/);
+});
 import { parseActionBindings, reconcileTargetFocus } from "../engine/input.js";
 import { Runtime } from "../engine/bootstrap.js";
 
