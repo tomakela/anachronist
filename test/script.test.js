@@ -5,6 +5,7 @@ import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
+import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
 import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
 import { Runtime } from "../engine/bootstrap.js";
 
@@ -427,4 +428,49 @@ test("the demo door can close, reopen, and be walked through", async () => {
   assert.deepEqual(instantiate(handler("entity.walk"), ["door"], { game: { door_open: true } }).map(({ op, target, room }) => [op, target, room]), [
     ["walk", "door", undefined], ["enter", undefined, "garden"]
   ]);
+});
+
+test("skippable handlers attach explicit metadata to every ordered command", () => {
+  const [handler] = compile(`on room.enter() skippable {
+ wait 20 ticks
+ set game.seen = true
+ shake 8 ticks
+ enter room hall at door
+}`);
+  const commands = instantiate(handler, []);
+  assert.equal(handler.skippable, true);
+  assert.deepEqual(commands.map(({ op }) => op), ["wait", "set", "shake", "enter"]);
+  assert.ok(commands.every(({ skippable }) => skippable));
+  assert.equal(compile('on game.start() {\n set game.ready = true\n}')[0].skippable, false);
+});
+
+test("fast walking samples masks and triggers instead of jumping over them", () => {
+  const visited = [];
+  const result = advanceWalk([0, 0], [20, 0], 2, 10, ([x]) => x < 9, (point) => visited.push(point[0]));
+  assert.deepEqual(result, { point: [8, 0], reached: false, blocked: true });
+  assert.deepEqual(visited, [2, 4, 6, 8]);
+});
+
+test("fast exit traversal observes a narrow trigger boundary", () => {
+  const triggers = { exit: [5, -1, 2, 2] }, entered = [];
+  let occupied = new Set();
+  const result = advanceWalk([0, 0], [12, 0], 1, 12, () => true, (point) => {
+    const state = enteredTriggers(point, triggers, occupied); occupied = state.occupied; entered.push(...state.entered);
+  });
+  assert.equal(result.reached, true);
+  assert.deepEqual(entered, ["exit"]);
+});
+
+test("cut-scene skipping retains persistent mutations and transitions in order", () => {
+  const queue = [
+    { op: "wait", skippable: true }, { op: "set", target: "game.key", value: true, skippable: true },
+    { op: "say", skippable: true }, { op: "hide", target: "key", skippable: true },
+    { op: "enter", room: "hall", skippable: true }, { op: "set", target: "game.puzzle", value: true }
+  ];
+  assert.equal(accelerateCommandQueue(queue), true);
+  assert.deepEqual(queue.filter(({ skipPresentation }) => skipPresentation).map(({ op }) => op), ["wait", "set", "say", "hide", "enter"]);
+  assert.deepEqual(queue.filter(({ op }) => ["set", "hide", "enter"].includes(op)).map(({ op, target }) => [op, target]), [
+    ["set", "game.key"], ["hide", "key"], ["enter", undefined], ["set", "game.puzzle"]
+  ]);
+  assert.equal(queue.at(-1).fast, undefined, "the following non-skippable puzzle boundary is untouched");
 });

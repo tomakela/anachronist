@@ -2,7 +2,7 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { loadBitmaps } from "./bitmaps.js";
-import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
+import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
 
 const root = typeof document === "undefined" ? null : document.querySelector("#engine-host");
 const entry = typeof document === "undefined" ? null : document.querySelector('meta[name="game-entry"]')?.content;
@@ -60,7 +60,13 @@ export class Runtime {
     this.longTouchMilliseconds = integer(game.input.long_touch_milliseconds, "long touch milliseconds");
     this.longTouchMoveTolerance = Number(game.input.long_touch_move_tolerance ?? 8);
     if (!Number.isFinite(this.longTouchMoveTolerance) || this.longTouchMoveTolerance < 0) throw new Error("long_touch_move_tolerance must be a non-negative number");
-    this.touchCursor = [this.width / 2, this.height / 2]; this.touch = null;
+    this.walkSpeed = Number(game.runtime.walk_speed); this.fastWalkMultiplier = Number(game.runtime.fast_walk_multiplier);
+    if (!Number.isFinite(this.walkSpeed) || this.walkSpeed <= 0) throw new Error("walk_speed must be a positive number");
+    if (!Number.isFinite(this.fastWalkMultiplier) || this.fastWalkMultiplier < 1) throw new Error("fast_walk_multiplier must be at least 1");
+    this.doubleTouchMilliseconds = integer(game.input.double_touch_milliseconds, "double touch milliseconds");
+    this.doubleTouchMoveTolerance = Number(game.input.double_touch_move_tolerance);
+    if (!Number.isFinite(this.doubleTouchMoveTolerance) || this.doubleTouchMoveTolerance < 0) throw new Error("double_touch_move_tolerance must be a non-negative number");
+    this.touchCursor = [this.width / 2, this.height / 2]; this.touch = null; this.lastTap = null;
     root.replaceChildren(this.canvas, this.settings()); root.ariaBusy = "false";
   }
   start() {
@@ -151,7 +157,7 @@ export class Runtime {
   }
   pointerDown(event) {
     if (event.target.closest?.(".mobile-settings")) return;
-    if (event.pointerType !== "touch") { if (event.target === this.canvas) this.pointer(event); return; }
+    if (event.pointerType !== "touch") { if (event.target === this.canvas) this.pointer(event, event.button, undefined, event.button === 0 && event.detail >= 2); return; }
     if (this.cursorMode !== "drag" && event.target !== this.canvas) return;
     if (this.touch) return;
     event.preventDefault(); root.setPointerCapture(event.pointerId);
@@ -175,13 +181,16 @@ export class Runtime {
     if (!this.touch.long && !this.touch.moved) {
       const button = performance.now() - this.touch.startedAt >= this.longTouchMilliseconds ? 2 : 0;
       this.touch.long = button === 2;
-      this.pointer(event, button, this.touchCursor);
+      const now = performance.now(), fast = button === 0 && this.lastTap && now - this.lastTap.time <= this.doubleTouchMilliseconds && !touchMoved(this.lastTap.point, this.touchCursor, this.doubleTouchMoveTolerance);
+      this.pointer(event, button, this.touchCursor, fast);
+      if (button === 0) this.lastTap = { time: now, point: [...this.touchCursor] };
     }
     this.touch = null;
   }
   cancelTouch(event) { if (this.touch?.id === event.pointerId) { clearTimeout(this.touch.timer); this.touch = null; } }
-  pointer(event, button = event.button, point = this.eventPoint(event)) {
+  pointer(event, button = event.button, point = this.eventPoint(event), fast = false) {
     event.preventDefault();
+    if (fast && this.queue.length) { this.accelerateCommands(); return; }
     if (!this.interactive) return;
     if (button === 2) this.clearSelection();
     const [x, y] = point;
@@ -207,8 +216,9 @@ export class Runtime {
     if (!this.activeVerb && this.inventory.includes(target)) return;
     if (!this.activeVerb) {
       this.interruptCommands(); this.actionSentence = target ? `Walk to ${this.label(target)}` : "Walk to";
-      if (!target) this.queue = [{ op: "walk", actor: "player", point: [Math.round(x), Math.round(y)], manual: true }];
+      if (!target) this.queue = [{ op: "walk", actor: "player", point: [Math.round(x), Math.round(y)], manual: true, fast }];
       else if (!this.dispatch("entity.walk", [target])) this.queue = [{ op: "walk", actor: "player", target, manual: true }];
+      if (fast) this.accelerateCommands();
       return;
     }
     if (this.activeVerb === "use") {
@@ -222,6 +232,10 @@ export class Runtime {
       }
     } else this.perform(this.activeVerb, target);
     this.clearSelection();
+  }
+  accelerateCommands() {
+    const skipping = accelerateCommandQueue(this.queue);
+    if (skipping) { this.dismissMessage(); const player = this.entities.player; if (player) player.actionTicks = 0; }
   }
   interruptCommands() { this.queue = []; const player = this.entities.player; if (player) { player.moving = false; player.action = null; player.actionTicks = 0; } }
   stopWalking() {
@@ -259,16 +273,16 @@ export class Runtime {
     const player = this.entities.player;
     if (player?.actionTicks > 0) { if (--player.actionTicks === 0) player.action = null; return; }
     const command = this.queue[0]; if (!command) { this.actionSentence = ""; return; }
-    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const speed = 2, dx = target[0] - actor.position[0], dy = target[1] - actor.position[1], distance = Math.hypot(dx, dy); actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); actor.moving = distance > speed; const next = distance <= speed ? [...target] : [actor.position[0] + dx / distance * speed, actor.position[1] + dy / distance * speed]; if (actor.id === "player" && !this.walkable(next)) { actor.moving = false; this.queue.shift(); this.actionSentence = ""; return; } actor.position = next; if (distance <= speed) { actor.moving = false; this.queue.shift(); } if (actor.id === "player") this.updateTriggers(actor.position); return; }
+    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const dx = target[0] - actor.position[0], dy = target[1] - actor.position[1]; actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); const result = advanceWalk(actor.position, target, this.walkSpeed, command.fast ? this.fastWalkMultiplier : 1, actor.id === "player" ? this.walkable : () => true, (point) => { if (actor.id === "player") this.updateTriggers(point); }); actor.position = result.point; actor.moving = !result.reached && !result.blocked; if (result.reached || result.blocked) { actor.moving = false; this.queue.shift(); if (result.blocked) this.actionSentence = ""; } return; }
     this.queue.shift();
     if (command.op === "enter") this.enter(command.room, command.spawn);
-    else if (command.op === "say" || command.op === "narrate") { this.message = command.value; this.messageKind = command.op; this.messageTicks = textDuration(command.value, this.game.runtime); }
-    else if (command.op === "animate") { const actor = this.entities[command.actor]; if (actor) { actor.moving = false; actor.action = command.animation; actor.actionTicks = this.animationDuration(command.animation, actor.facing); } }
+    else if (command.op === "say" || command.op === "narrate") { if (command.skipPresentation) return; this.message = command.value; this.messageKind = command.op; this.messageTicks = command.fast ? 1 : textDuration(command.value, this.game.runtime); }
+    else if (command.op === "animate") { const actor = this.entities[command.actor]; if (actor) { actor.moving = false; actor.action = command.animation; actor.actionTicks = command.skipPresentation ? 0 : (command.fast ? 1 : this.animationDuration(command.animation, actor.facing)); } }
     else if (command.op === "take") { const entity = this.entities[command.target]; if (entity && !this.inventory.includes(command.target)) { if (!command.animated) { this.queue.unshift({ ...command, animated: true }); this.queue.unshift({ op: "animate", actor: "player", animation: "pickup" }); return; } entity.visible = "false"; this.inventoryEntities[command.target] = { ...this.items[command.target], ...entity }; this.inventory.push(command.target); this.scrollInventoryToEnd(); } }
     else if (command.op === "hide" || command.op === "show") this.entities[command.target].visible = command.op === "show" ? "true" : "false";
     else if (command.op === "set") { const [id, field] = command.target.split("."); if (id === "game") this.globals[field] = command.value; else if (this.roomState[id]) this.roomState[id][field] = command.value; else this.entities[id][field] = String(command.value); }
-    else if (command.op === "wait") this.queue.unshift(...Array(command.ticks).fill({ op: "pause" }));
-    else if (command.op === "shake") this.shakeTicks = command.ticks;
+    else if (command.op === "wait") { if (!command.skipPresentation) this.queue.unshift(...Array(command.fast ? 1 : command.ticks).fill({ op: "pause", skippable: command.skippable })); }
+    else if (command.op === "shake") { if (!command.skipPresentation) this.shakeTicks = command.fast ? 1 : command.ticks; }
     else if (command.op === "pause") return;
     else if (command.op === "face") this.entities[command.actor].facing = command.direction;
   }

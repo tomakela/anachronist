@@ -299,3 +299,11 @@ command from a malformed or incomplete chain may execute. Consequently a
 scripted `walk; take; walk; use` interaction cannot begin walking while the
 remainder of that action is still being constructed. `sequence` is not a
 concurrency primitive; it makes this command-planning boundary explicit.
+
+### Skippable presentation
+
+A handler may put `skippable` between its signature and body, for example
+`on enter() skippable { ... }`. A skip gesture accelerates or suppresses only
+walking animation, waits, dialogue duration, animation, and screen shake. State
+mutations and room transitions remain queued and execute in source order.
+Handlers are non-skippable by default, so clicks cannot bypass puzzle logic.
