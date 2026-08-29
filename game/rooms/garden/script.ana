@@ -1,3 +1,15 @@
+on enter() {
+    if game.coin_thrown == true {
+        set fountain.graphic = placeholder.fountain_splash
+    }
+    if game.wire_fixed == true {
+        set wire.graphic = placeholder.wire_fixed
+    }
+    if game.lamp_on == true {
+        set lamp.graphic = placeholder.lamp_on
+    }
+}
+
 on gate.walk() {
     walk player to gate
     enter room hall at garden
@@ -8,6 +20,72 @@ on gate.look() {
 }
 
 on fountain.look() {
-    say "That looks interesting."
-    say "There may be more to discover here."
+    if game.coin_thrown == true {
+        say "My wish is resting beneath the sparkling water."
+    } else {
+        say "The fountain looks like a fine place to make a wish."
+    }
+}
+
+on fountain.use_item(item) {
+    if item == coin {
+        walk player to fountain
+        remove coin from inventory
+        set fountain.graphic = placeholder.fountain_splash
+        set game.coin_thrown = true
+        shake 8 ticks
+        say "I toss the coin and make a wish."
+    } else {
+        say "That would not improve the fountain."
+    }
+}
+
+on wire.look() {
+    if game.wire_fixed == true {
+        say "The key bridges the gap. The circuit is complete."
+    } else {
+        say "A broken wire leaves a key-sized gap in the circuit."
+    }
+}
+
+on wire.use_item(item) {
+    if item == key {
+        walk player to wire
+        remove key from inventory
+        set wire.graphic = placeholder.wire_fixed
+        set game.wire_fixed = true
+        say "The brass key closes the circuit."
+    } else {
+        say "That does not conduct electricity well enough."
+    }
+}
+
+on lamp.look() {
+    if game.lamp_on == true {
+        say "The repaired circuit makes the lamp glow warmly."
+    } else {
+        say "An electric lamp with a small switch."
+    }
+}
+
+on lamp.open() {
+    if game.wire_fixed == true {
+        walk player to lamp
+        set lamp.graphic = placeholder.lamp_on
+        set game.lamp_on = true
+        say "The lamp flickers to life."
+    } else {
+        say "The switch clicks, but the broken circuit supplies no power."
+    }
+}
+
+on lamp.close() {
+    if game.lamp_on == true {
+        walk player to lamp
+        set lamp.graphic = placeholder.lamp_off
+        set game.lamp_on = false
+        say "The lamp goes dark."
+    } else {
+        say "The lamp is already off."
+    }
 }

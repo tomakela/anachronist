@@ -48,7 +48,9 @@ knees. Taking and using objects also play directional one-shot animations.
 Each room's mutable entity state is retained between visits, so a taken object
 cannot reappear at its old room position when the player returns. The demo also
 records key acquisition in the persistent `game.key_taken` global for its game
-logic.
+logic. In the garden, the coin can be thrown into the fountain, the key can
+bridge a broken wire, and the newly powered lamp can then be switched on with
+**Open** and off with **Close**. These puzzle changes persist across room visits.
 
 On touch-oriented devices, a relative drag cursor is enabled by default. A small
 settings button in the top-right switches between it and direct pointing. Relative movement is

@@ -48,6 +48,7 @@ export function compile(source, compileContext = {}) {
     }
     else if (op === "say" || op === "narrate") node = { op, value: expression() };
     else if (["take", "show", "hide", "enable", "disable"].includes(op)) node = { op, target: take().value };
+    else if (op === "remove") { node = { op, target: take().value }; take("from"); take("inventory"); }
     else if (op === "enter") { take("room"); const room = take().value; take("at"); node = { op, room, spawn: take().value }; }
     else if (op === "set") { const target = take().value; take("="); node = { op, target, value: expression() }; }
     else if (op === "wait" || op === "await" || op === "shake") { const ticks = take().value; take("ticks"); node = { op: op === "await" ? "await" : op, ticks }; }

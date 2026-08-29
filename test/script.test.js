@@ -146,7 +146,7 @@ test("every demo object responds to the look action used by long touch", async (
   const main = compile(await readFile(new URL("../game/main.ana", import.meta.url), "utf8"));
   const roomSpecs = [
     ["hall", ["door", "clock", "fallen_clock", "key", "bush", "stick"]],
-    ["garden", ["gate", "fountain"]]
+    ["garden", ["gate", "fountain", "wire", "lamp"]]
   ];
   const handlers = [...main];
   for (const [room, entities] of roomSpecs) {
@@ -158,7 +158,7 @@ test("every demo object responds to the look action used by long touch", async (
     handlers.push(...compile(await readFile(new URL(`../game/items/${script}`, import.meta.url), "utf8"), { itemId: item }));
   }
 
-  const lookTargets = ["door", "clock", "fallen_clock", "key", "bush", "stick", "gate", "fountain", "coffee_cup", "coin", "notebook", "pencil", "handkerchief"];
+  const lookTargets = ["door", "clock", "fallen_clock", "key", "bush", "stick", "gate", "fountain", "wire", "lamp", "coffee_cup", "coin", "notebook", "pencil", "handkerchief"];
   for (const target of lookTargets) {
     assert.ok(handlers.some((handler) => handler.event === "entity.look" && handler.localTarget === target), `${target} is missing a look handler`);
   }
@@ -312,6 +312,20 @@ test("inventory item use never returns to the item's former room position", () =
   }, rooms: {} };
   assert.deepEqual(prepareItemUse(commands, world, ITEM_USE_PROTOCOL).map(({ op, target }) => [op, target]), [
     ["walk", "door"], ["animate", undefined], ["say", undefined]
+  ]);
+});
+
+test("item-use transactions can consume an inventory item", () => {
+  const commands = instantiate(compile(`on fountain.use_item(item) {
+    walk player to fountain
+    remove item from inventory
+    set game.coin_thrown = true
+  }`, { roomId: "garden", entities: ["fountain"] })[0], ["coin", "fountain"]);
+  const world = { inventory: ["coin"], entities: {
+    player: { visible: "true" }, fountain: { visible: "true" }
+  }, rooms: {} };
+  assert.deepEqual(prepareItemUse(commands, world, ITEM_USE_PROTOCOL).map(({ op, target }) => [op, target]), [
+    ["walk", "fountain"], ["animate", undefined], ["remove", "coin"], ["set", "game.coin_thrown"]
   ]);
 });
 
