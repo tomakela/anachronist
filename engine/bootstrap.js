@@ -95,7 +95,7 @@ export class Runtime extends DeterministicVM {
     event.preventDefault(); this.inputAction(action, { event });
   }
   inputAction(action, detail = {}) {
-    if (!this.interactive && action !== "cancel" && action !== "dialogue_advance") return;
+    if (!this.interactive && action !== "cancel" && action !== "dialogue_advance" && action !== "pointer_primary") return;
     if (action === "pointer_primary") return this.action({ type: "pointer", button: 0, point: detail.point, fast: detail.fast });
     if (action === "pointer_secondary") return this.action({ type: "pointer", button: 2, point: detail.point, fast: detail.fast });
     if (action === "verb_look") return this.selectVerb("look");

@@ -1,6 +1,6 @@
 import { integer, list, tuple } from "./ini.js";
 import { instantiate, textDuration } from "./script.js";
-import { advanceWalk, bitmapWalkRegion, enteredTriggers, interfacePoint, parseScalingStops, retainedRoomEntities, roomEntryItems, verbSentence } from "./interaction.js";
+import { advanceCutSceneQueue, advanceWalk, bitmapWalkRegion, enteredTriggers, interfacePoint, parseScalingStops, retainedRoomEntities, roomEntryItems, verbSentence } from "./interaction.js";
 
 const inside = (x, y, [bx, by, bw, bh]) => x >= bx && y >= by && x < bx + bw && y < by + bh;
 const title = (value) => value[0].toUpperCase() + value.slice(1);
@@ -109,8 +109,9 @@ export class DeterministicVM {
     this.dispatch("room.enter", [id]);
   }
   pointer({ button = 0, point, fast = false }) {
-    if (fast && this.queue.length) { this.accelerateCommands(); return; }
+    if (!this.interactive && button === 0) { this.advanceCutScene(); return; }
     if (!this.interactive) return;
+    if (fast && this.queue.length) { this.accelerateCommands(); return; }
     const [x, y] = point;
     {
       const inventory = this.inventoryLayout();
@@ -185,6 +186,13 @@ export class DeterministicVM {
     else if (command.op === "face" && this.entities[command.actor]) this.entities[command.actor].facing = command.direction;
     else if (command.op === "spawn") this.backgroundTasks.start(command.definition, command.args, command.ownerRoom);
     else throw new Error(`script: ${command.op} is not supported in a background task`);
+  }
+  advanceCutScene() {
+    if (this.message) { this.dismissMessage(); return; }
+    const player = this.entities[this.game.protocol.player_actor];
+    if (player?.actionTicks > 0) { player.actionTicks = 0; player.action = null; return; }
+    if (this.shakeTicks > 0) { this.shakeTicks = 0; return; }
+    advanceCutSceneQueue(this.queue);
   }
   updateTriggers(point) { const state = enteredTriggers(point, this.triggers, this.occupiedTriggers); this.occupiedTriggers = state.occupied; for (const id of state.entered) if (!this.queue.some(({ op }) => op === "enter")) this.dispatch("trigger.enter", [id]); }
 }

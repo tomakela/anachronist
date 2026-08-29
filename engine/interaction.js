@@ -99,6 +99,17 @@ export function accelerateCommandQueue(queue) {
   return skipping;
 }
 
+/** Advance only the current presentation phase of a non-interactive cut scene. */
+export function advanceCutSceneQueue(queue) {
+  let removedPause = false;
+  while (queue[0]?.op === "pause") { queue.shift(); removedPause = true; }
+  if (removedPause) return true;
+  const command = queue[0];
+  if (!command || !["wait", "say", "narrate", "animate", "shake"].includes(command.op)) return false;
+  command.skipPresentation = true;
+  return true;
+}
+
 /** True when a point belongs to the non-walkable interface at the screen foot. */
 export function interfacePoint(x, y, ui, width, height) {
   const regions = [ui.sentence_region?.rect, ui.verb_panel?.region_rect, ui.inventory_panel?.rect]

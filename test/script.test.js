@@ -5,7 +5,7 @@ import { BackgroundTasks, compile, instantiate, textDuration } from "../engine/s
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { bitmapPixels, loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
-import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
+import { accelerateCommandQueue, advanceCutSceneQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
 import { SaveStorage, snapshotRuntime, stableStringify, validateSnapshot } from "../engine/save.js";
 import { parseActionBindings } from "../engine/input.js";
 import { Runtime } from "../engine/bootstrap.js";
@@ -588,6 +588,18 @@ test("cut-scene skipping retains persistent mutations and transitions in order",
     ["set", "game.key"], ["hide", "key"], ["enter", undefined], ["set", "game.puzzle"]
   ]);
   assert.equal(queue.at(-1).fast, undefined, "the following non-skippable puzzle boundary is untouched");
+});
+
+test("cut-scene clicks advance one presentation phase at a time", () => {
+  const waiting = [{ op: "pause" }, { op: "pause" }, { op: "set", target: "game.seen", value: true }, { op: "wait", ticks: 20 }, { op: "enter", room: "hall" }];
+  assert.equal(advanceCutSceneQueue(waiting), true);
+  assert.deepEqual(waiting.map(({ op }) => op), ["set", "wait", "enter"]);
+  assert.equal(waiting[1].skipPresentation, undefined, "a later phase is not skipped by the same click");
+
+  waiting.shift();
+  assert.equal(advanceCutSceneQueue(waiting), true);
+  assert.equal(waiting[0].skipPresentation, true);
+  assert.equal(waiting[1].skipPresentation, undefined);
 });
 
 test("spawned tasks await independently and survive command interruption", () => {
