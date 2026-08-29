@@ -97,6 +97,13 @@ export function dragCursor(point, delta, sensitivity, width, height) {
   ];
 }
 
+/** True only when a touch has moved beyond the allowed long-touch jitter. */
+export function touchMoved(start, point, tolerance) {
+  const amount = Number(tolerance);
+  if (!Number.isFinite(amount) || amount < 0) throw new Error("long_touch_move_tolerance must be a non-negative number");
+  return Math.hypot(point[0] - start[0], point[1] - start[1]) > amount;
+}
+
 /** True when a point belongs to the non-walkable interface at the screen foot. */
 export function interfacePoint(x, y, ui, width, height) {
   const regions = [ui.sentence_region?.rect, ui.verb_panel?.region_rect, ui.inventory_panel?.rect]

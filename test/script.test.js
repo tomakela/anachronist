@@ -5,7 +5,7 @@ import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
-import { bitmapWalkRegion, dragCursor, enteredTriggers, entityRenderOrder, interfacePoint, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, verbSentence } from "../engine/interaction.js";
+import { bitmapWalkRegion, dragCursor, enteredTriggers, entityRenderOrder, interfacePoint, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
 
 const pixelCanvas = (width, height, values) => () => {
   const image = { data: new Uint8ClampedArray(values) };
@@ -248,6 +248,13 @@ test("drag cursor movement applies sensitivity and clamps to the game", () => {
   assert.deepEqual(dragCursor([100, 50], [4, -2], 2.25, 320, 200), [109, 45.5]);
   assert.deepEqual(dragCursor([318, 1], [4, -2], 2, 320, 200), [319, 0]);
   assert.throws(() => dragCursor([0, 0], [1, 1], 0, 320, 200), /positive number/);
+});
+
+test("long touches tolerate small finger movement", () => {
+  assert.equal(touchMoved([100, 50], [106, 55], 8), false);
+  assert.equal(touchMoved([100, 50], [108, 50], 8), false);
+  assert.equal(touchMoved([100, 50], [108.1, 50], 8), true);
+  assert.throws(() => touchMoved([0, 0], [0, 0], -1), /non-negative number/);
 });
 
 test("verb and inventory interface points are not walk destinations", async () => {

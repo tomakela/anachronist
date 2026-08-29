@@ -52,8 +52,10 @@ On touch-oriented devices, a small settings button in the top-right switches
 between direct pointing and a relative drag cursor. Relative movement is
 amplified by the package's `input.dragging_sensitivity` value, making precise
 pointing possible without covering the target. A long touch performs the same
-**Look** action as a desktop right-click. The verb and inventory panels are UI
-only: touching their unused space never starts walking or displays “Walk to”.
+**Look** action as a desktop right-click. Small finger movements within the
+configured `input.long_touch_move_tolerance` do not cancel a long touch. The
+verb and inventory panels are UI only: touching their unused space never starts
+walking or displays “Walk to”.
 Room `player_scaling` perspective stops scale the actor according to its y
 position, with linear interpolation between two or more `y,scale` pairs. Taking
 the hall clock now runs a multi-step scene: it disappears from the wall, shakes
