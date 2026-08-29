@@ -4,8 +4,8 @@ import { resolvePackagePath } from "./path.js";
 import { loadBitmaps } from "./bitmaps.js";
 import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
 
-const root = document.querySelector("#engine-host");
-const entry = document.querySelector('meta[name="game-entry"]')?.content;
+const root = typeof document === "undefined" ? null : document.querySelector("#engine-host");
+const entry = typeof document === "undefined" ? null : document.querySelector('meta[name="game-entry"]')?.content;
 const fetchText = async (path) => { const response = await fetch(path); if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`); return response.text(); };
 
 async function boot() {
@@ -41,7 +41,7 @@ async function boot() {
   new Runtime(game, ui, rooms, items, graphics, animations, bitmaps, handlers).start();
 }
 
-class Runtime {
+export class Runtime {
   constructor(game, ui, rooms, items, graphics, animations, bitmaps, handlers) {
     Object.assign(this, { game, ui, rooms, items, graphics, animations, bitmaps, handlers });
     this.entities = Object.create(null); this.roomEntities = Object.create(null); this.inventory = []; this.inventoryEntities = Object.create(null); this.globals = { ...game.$variables };
@@ -109,6 +109,24 @@ class Runtime {
   matchingHandler(event, args) { return this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length && (!candidate.roomId || candidate.roomId === this.room) && (!candidate.localTarget || candidate.localTarget === args.at(-1))); }
   dispatch(event, args) { const handler = this.matchingHandler(event, args); if (!handler) return 0; const commands = instantiate(handler, args, this.scriptState()); this.queue.push(...commands); return commands.length; }
   commands(event, args) { const handler = this.matchingHandler(event, args); return handler ? instantiate(handler, args, this.scriptState()) : null; }
+  fallbackCommands(verb, args) {
+    const target = args.at(-1), localEvent = `entity.fallback_${verb}`;
+    const candidates = [
+      this.handlers.find((handler) => handler.event === localEvent && handler.roomId === this.room && args.includes(handler.localTarget)),
+      this.handlers.find((handler) => handler.event === `fallback.${verb}` && handler.itemId && args.includes(handler.localTarget)),
+      this.handlers.find((handler) => handler.event === `fallback.${verb}` && handler.roomId === this.room && !handler.localTarget),
+      this.handlers.find((handler) => handler.event === `fallback.${verb}` && !handler.roomId && !handler.itemId && !handler.localTarget)
+    ];
+    const handler = candidates.find(Boolean);
+    if (handler) return instantiate(handler, args, this.scriptState());
+    const spec = this.ui[`fallback.${verb}`] || this.ui.fallback || {};
+    const template = spec.text || this.ui.fallback?.text || "That doesn't work with {target}.";
+    const labels = args.map((id) => this.label(id));
+    const value = template.replaceAll("{verb}", this.ui[`verb.${verb}`]?.label || title(verb))
+      .replaceAll("{target}", labels.at(-1)).replaceAll("{first}", labels[0]).replaceAll("{second}", labels[1] ?? "");
+    return [{ op: "narrate", value }];
+  }
+  enqueueFallback(verb, args) { this.queue.push(...this.fallbackCommands(verb, args)); }
   enter(id, spawn) {
     const room = this.rooms[id]; if (!room) throw new Error(`Unknown room ${id}`); this.room = id;
     this.interactive = room.room.interactive !== "false";
@@ -210,6 +228,7 @@ class Runtime {
         const commands = this.commands("entity.use_item", [this.firstObject, target]);
         const prepared = commands && prepareItemUse(commands, this);
         if (prepared) this.queue.push(...prepared);
+        else this.enqueueFallback("use_item", [this.firstObject, target]);
       }
     } else this.perform(this.activeVerb, target);
     this.clearSelection();
@@ -242,7 +261,7 @@ class Runtime {
     const columns = Math.max(1, Math.floor((this.width - origin[0] - arrowWidth) / itemWidth));
     this.inventoryRow = inventoryLastRow(this.inventory.length, columns);
   }
-  perform(verb, target) { if (!target) return; this.interruptCommands(); this.actionSentence = this.verbSentence(verb, target); if (verb === "use") this.queue.push({ op: "animate", actor: "player", animation: "use" }); this.dispatch(`entity.${verb}`, [target]); }
+  perform(verb, target) { if (!target) return; this.interruptCommands(); this.actionSentence = this.verbSentence(verb, target); const commands = this.commands(`entity.${verb}`, [target]); if (commands) { if (verb === "use") this.queue.push({ op: "animate", actor: "player", animation: "use" }); this.queue.push(...commands); } else this.enqueueFallback(verb, [target]); }
   verbSentence(verb, first, second) { return verbSentence(this.ui, (id) => this.label(id), verb, first, second); }
   dismissMessage() { this.message = ""; this.messageTicks = 0; this.messageKind = ""; if (!this.queue.length) this.actionSentence = ""; }
   clearSelection() { this.activeVerb = null; this.firstObject = null; }
@@ -325,4 +344,4 @@ class Runtime {
 }
 const inside = (x, y, [bx, by, bw, bh]) => x >= bx && y >= by && x < bx + bw && y < by + bh;
 const title = (value) => value[0].toUpperCase() + value.slice(1);
-boot().catch((error) => { root.textContent = `Cannot start game: ${error.message}`; root.ariaBusy = "false"; console.error(error); });
+if (root && entry) boot().catch((error) => { root.textContent = `Cannot start game: ${error.message}`; root.ariaBusy = "false"; console.error(error); });

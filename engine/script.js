@@ -61,8 +61,10 @@ export function compile(source, compileContext = {}) {
     take(")"); newlines();
     const skippable = peek("skippable") ? (take(), newlines(), true) : false;
     let event = declaredEvent, localTarget;
-    if (compileContext.itemId && !declaredEvent.includes(".")) { event = `entity.${declaredEvent}`; localTarget = compileContext.itemId; args.push("target"); }
+    if (compileContext.itemId && declaredEvent.startsWith("fallback.")) { localTarget = compileContext.itemId; args.push("target"); }
+    else if (compileContext.itemId && !declaredEvent.includes(".")) { event = `entity.${declaredEvent}`; localTarget = compileContext.itemId; args.push("target"); }
     else if (compileContext.roomId && declaredEvent === "enter") { event = "room.enter"; args.push("room"); }
+    else if (compileContext.roomId && declaredEvent.startsWith("fallback.")) { /* package-style room fallback */ }
     else if (compileContext.roomId && declaredEvent.includes(".") && !["game", "room", "entity", "trigger"].includes(declaredEvent.split(".")[0])) {
       const [entity, action, extra] = declaredEvent.split(".");
       if (!action || extra) throw new Error(`script: invalid room event ${declaredEvent}`);
@@ -70,6 +72,7 @@ export function compile(source, compileContext = {}) {
       event = `entity.${action}`; localTarget = entity; args.push("target");
     }
     handlers.push({ event, args, body: block(), skippable, ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(localTarget ? { localTarget } : {}) });
+    handlers.push({ event, args, body: block(), ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(compileContext.itemId ? { itemId: compileContext.itemId } : {}), ...(localTarget ? { localTarget } : {}) });
     newlines();
   }
   return handlers;

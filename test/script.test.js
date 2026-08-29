@@ -6,6 +6,8 @@ import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
 import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
+import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
+import { Runtime } from "../engine/bootstrap.js";
 
 const pixelCanvas = (width, height, values) => () => {
   const image = { data: new Uint8ClampedArray(values) };
@@ -239,6 +241,53 @@ test("an invalid item-use tail rejects the entire transaction", () => {
   const commands = [{ op: "walk", actor: "player", target: "key" }, { op: "take", target: "key" }, { op: "walk", actor: "player", target: "missing" }];
   const world = { inventory: [], entities: { player: { visible: "true" }, key: { visible: "true" } }, rooms: {} };
   assert.equal(prepareItemUse(commands, world), null);
+});
+
+const fallbackRuntime = (handlers = []) => {
+  const runtime = Object.create(Runtime.prototype);
+  Object.assign(runtime, {
+    handlers, room: "hall", queue: [], globals: {}, roomState: { hall: {} }, inventory: [],
+    entities: { player: { moving: false }, door: { label: "painted door", visible: "true" }, key: { label: "brass key", visible: "true" } },
+    inventoryEntities: {}, rooms: {}, ui: {
+      verb_panel: { verbs: "" },
+      "verb.open": { label: "Open", rect: "0,0,0,0" }, "verb.use": { label: "Use", object_preposition: "on", rect: "0,0,0,0" },
+      "fallback.open": { text: "No opening {target}." },
+      "fallback.use_item": { text: "No {first} with {second}." }
+    }
+  });
+  return runtime;
+};
+
+test("unsupported single-object verbs enqueue their configured narration", () => {
+  const runtime = fallbackRuntime();
+  runtime.perform("open", "door");
+  assert.deepEqual(runtime.queue, [{ op: "narrate", value: "No opening painted door." }]);
+});
+
+test("invalid item combinations interpolate both configured labels", () => {
+  const runtime = fallbackRuntime();
+  runtime.enqueueFallback("use_item", ["key", "door"]);
+  assert.deepEqual(runtime.queue, [{ op: "narrate", value: "No brass key with painted door." }]);
+});
+
+test("a rejected item transaction narrates without walking or animating", () => {
+  const handler = compile(`on entity.use_item(item, target) { walk player to missing\n }`)[0];
+  const runtime = fallbackRuntime([handler]);
+  Object.assign(runtime, { interactive: true, activeVerb: "use", firstObject: "key", actionSentence: "", hoverTarget: null });
+  runtime.inventoryLayout = () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} });
+  runtime.targetAt = () => "door";
+  runtime.pointer({ preventDefault() {}, button: 0 }, 0, [10, 10]);
+  assert.deepEqual(runtime.queue, [{ op: "narrate", value: "No brass key with painted door." }]);
+});
+
+test("entity and room fallback scripts override generic narration in order", () => {
+  const game = compile(`on fallback.open(target) { narrate "game"\n }`);
+  const room = compile(`on fallback.open(target) { narrate "room"\n }`, { roomId: "hall", entities: ["door"] });
+  const entity = compile(`on door.fallback_open() { narrate "entity"\n }`, { roomId: "hall", entities: ["door"] });
+  const runtime = fallbackRuntime([...game, ...room, ...entity]);
+  assert.equal(runtime.fallbackCommands("open", ["door"])[0].value, "entity");
+  runtime.handlers = [...game, ...room];
+  assert.equal(runtime.fallbackCommands("open", ["door"])[0].value, "room");
 });
 
 test("triggers fire only when crossing into their region", () => {

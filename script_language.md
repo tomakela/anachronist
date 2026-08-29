@@ -69,6 +69,23 @@ item script is not tied to a room and its short handlers implicitly target that
 item. For example, `on look()` in `coffee_cup.ana` handles looking at the coffee
 cup in whichever room currently contains the player.
 
+### Interaction fallbacks
+
+Missing handlers use the matching `[fallback.<verb>]` text in `interface.ini`.
+Two-object Use uses `[fallback.use_item]`. `{first}`, `{second}`, and `{target}`
+are replaced with configured object labels, and `{verb}` with the configured
+verb label. A rejected two-object transaction uses the same fallback before
+walking or animation starts.
+
+Scripts override those defaults in this precedence order: current-room entity,
+inventory item, current room, package entry script, then interface text. Entity
+handlers are named like `on door.fallback_open()`. Item scripts use, for
+example, `on fallback.use_item(item)` (their own item is the implicit final
+argument). Room and game scripts use `on fallback.open(target)` or, for two
+objects, `on fallback.use_item(item, target)`. Entity two-object handlers use
+`on door.fallback_use_item(item)`. A fallback is an ordinary command block, so
+it may `say` or perform any other supported commands instead of narrating.
+
 Rooms can also be cut scenes. `interactive = false` disables pointing and
 verbs, `interface_visible = false` hides the verb and inventory interface, and
 `fullscreen = true` lets room artwork occupy the whole logical display. Cut
