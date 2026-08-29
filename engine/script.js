@@ -90,8 +90,7 @@ export function compile(source, compileContext = {}) {
       if (compileContext.entities && !compileContext.entities.includes(entity)) throw new Error(`script: unknown local entity ${entity}`);
       event = `entity.${action}`; localTarget = entity; args.push("target");
     }
-    handlers.push({ event, args, body: block(), skippable, ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(compileContext.itemId ? { itemId: compileContext.itemId } : {}), ...(inventoryOnly ? { inventoryOnly: true } : {}), ...(localTarget ? { localTarget } : {}) });
-    handlers.push({ event, args, body: block(), skippable, tasks, ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(localTarget ? { localTarget } : {}) });
+    handlers.push({ event, args, body: block(), skippable, tasks, ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(compileContext.itemId ? { itemId: compileContext.itemId } : {}), ...(inventoryOnly ? { inventoryOnly: true } : {}), ...(localTarget ? { localTarget } : {}) });
     newlines();
   }
   for (const task of Object.values(tasks)) task.tasks = tasks;
