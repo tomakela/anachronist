@@ -248,6 +248,52 @@ export class Runtime extends DeterministicVM {
   }
   cancelTouch(event) { if (this.touch?.id === event.pointerId) { clearTimeout(this.touch.timer); this.touch = null; } }
   dispatchPhysicalTouch(gesture, event, point, fast = false) { event.preventDefault(); const action = this.input.touch.get(gesture); if (action) this.inputAction(action, { point, event, fast }); }
+  pointer(event, button = event.button, point = this.eventPoint(event), fast = false) {
+    event.preventDefault();
+    if (fast && this.queue.length) { this.accelerateCommands(); return; }
+    if (!this.interactive) return;
+    const [x, y] = point;
+    {
+      const inventory = this.inventoryLayout();
+      if (inside(x, y, inventory.upRect) && inventory.page.up) { this.inventoryRow--; return; }
+      if (inside(x, y, inventory.downRect) && inventory.page.down) { this.inventoryRow++; return; }
+    }
+    let selectedVerb = null;
+    if (button === 0) for (const verb of list(this.ui.verb_panel.verbs)) { const box = tuple(this.ui[`verb.${verb}`].rect, 4, verb); if (inside(x, y, box)) { selectedVerb = verb; break; } }
+    if (this.message) {
+      this.dismissMessage();
+      // A verb click still advances dialogue, but becomes a selection when it
+      // closed the final piece of text in the current command chain.
+      if (selectedVerb && !this.queue.some(({ op }) => op === "say" || op === "narrate")) { this.activeVerb = selectedVerb; this.firstObject = null; }
+      return;
+    }
+    if (selectedVerb) { this.stopWalking(); this.activeVerb = selectedVerb; this.firstObject = null; return; }
+    const target = this.targetAt(x, y);
+    if (interfacePoint(x, y, this.ui, this.width, this.height) && !target) return;
+    if (button === 2) {
+      if (target) { this.clearSelection(); this.perform("look", target); }
+      return;
+    }
+    if (!this.activeVerb && this.inventory.includes(target)) return;
+    if (!this.activeVerb) {
+      this.interruptCommands(); this.actionSentence = target ? `Walk to ${this.label(target)}` : "Walk to";
+      if (!target) this.queue = [{ op: "walk", actor: "player", point: [Math.round(x), Math.round(y)], manual: true, fast }];
+      else if (!this.dispatch("entity.walk", [target])) this.queue = [{ op: "walk", actor: "player", target, manual: true }];
+      if (fast) this.accelerateCommands();
+      return;
+    }
+    if (this.activeVerb === "use") {
+      if (!this.firstObject && target) { this.firstObject = target; this.hoverTarget = null; return; }
+      else if (target) {
+        this.interruptCommands(); this.actionSentence = this.verbSentence("use", this.firstObject, target);
+        const commands = this.commands("entity.use_item", [this.firstObject, target]);
+        const prepared = commands && prepareItemUse(commands, this);
+        if (prepared) this.queue.push(...prepared);
+        else this.enqueueFallback("use_item", [this.firstObject, target]);
+      }
+    } else this.perform(this.activeVerb, target);
+    this.clearSelection();
+  }
   accelerateCommands() {
     const skipping = accelerateCommandQueue(this.queue);
     if (skipping) { this.dismissMessage(); const player = this.entities[this.game.protocol.player_actor]; if (player) player.actionTicks = 0; }

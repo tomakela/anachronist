@@ -387,6 +387,21 @@ test("a touch tap dispatches its pointer action exactly once", () => {
   assert.deepEqual(calls[0], [{ type: "pointer", button: 0, point: [10, 20], fast: null }]);
 });
 
+test("the secondary pointer action looks at the touched target", () => {
+  const runtime = fallbackRuntime(), calls = [];
+  Object.assign(runtime, {
+    interactive: true, activeVerb: "use", firstObject: "key", message: "",
+    width: 320, height: 200,
+    inventoryLayout: () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} }),
+    targetAt: () => "door",
+    perform: (...args) => calls.push(args)
+  });
+  runtime.inputAction("pointer_secondary", { event: { preventDefault() {} }, point: [10, 10] });
+  assert.deepEqual(calls, [["look", "door"]]);
+  assert.equal(runtime.activeVerb, null);
+  assert.equal(runtime.firstObject, null);
+});
+
 test("entity and room fallback scripts override generic narration in order", () => {
   const game = compile(`on fallback.open(target) { narrate "game"\n }`);
   const room = compile(`on fallback.open(target) { narrate "room"\n }`, { roomId: "hall", entities: ["door"] });
