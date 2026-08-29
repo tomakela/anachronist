@@ -74,11 +74,15 @@ the garden.
 Graphics may declare `transparent_color = #RRGGBB`; matching pixels become
 transparent after decoding. Room entities render back-to-front by their `z`
 value, from smallest to largest. The background is at z -100, ordinary objects
-default to z 0, and the player defaults to z 100. Set `interactive = false` on
+default to z 0, and the player defaults to z 100. An entity can instead set
+`z_clip = Y` to switch around the player: when the player is above Y the object
+is drawn first, and when the player is below Y the player is drawn first. Set `interactive = false` on
 decorative entities that should be drawn but ignored by pointing and verbs. A
 room may also name a bitmap with `walk_mask`; only
 its opaque, non-black pixels permit player movement (the mask is scaled to the
-logical room size).
+logical room size). A walk stops at the first step that would enter a masked-out
+pixel. Whenever an item is added, the inventory automatically moves to its last
+row so the new item is visible.
 
 Verb sentence prepositions are package data (`preposition = at` makes the
 **Look** action read “Look at …”, while `object_preposition = on` produces
