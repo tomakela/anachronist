@@ -90,7 +90,9 @@ Rooms can also be cut scenes. `interactive = false` disables pointing and
 verbs, `interface_visible = false` hides the verb and inventory interface, and
 `fullscreen = true` lets room artwork occupy the whole logical display. Cut
 scene scripts use the same deterministic commands, including `wait N ticks`,
-and normally enter another room when their sequence finishes.
+and normally enter another room when their sequence finishes. A primary click
+or tap advances only the current presentation phase (such as a wait, line of
+dialogue, animation, or shake); ordered state changes and later phases remain.
 
 ## 3. Types and expressions
 
