@@ -27,11 +27,3 @@ function add(map, physical, action, section) {
   if (map.has(physical)) throw new Error(`${section}: ${physical} is already bound to ${map.get(physical)}`);
   map.set(physical, action);
 }
-
-/** Keep focus stable by id, falling back to the nearest surviving position. */
-export function reconcileTargetFocus(targets, focusedId, previousIndex = 0) {
-  if (!targets.length) return { id: null, index: -1 };
-  const retained = targets.findIndex(({ id }) => id === focusedId);
-  const index = retained >= 0 ? retained : Math.min(Math.max(previousIndex, 0), targets.length - 1);
-  return { id: targets[index].id, index };
-}
