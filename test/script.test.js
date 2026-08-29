@@ -5,10 +5,12 @@ import { BackgroundTasks, compile, instantiate, textDuration } from "../engine/s
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { bitmapPixels, loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
-import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
+import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
 import { SaveStorage, snapshotRuntime, stableStringify, validateSnapshot } from "../engine/save.js";
 import { parseActionBindings, reconcileTargetFocus } from "../engine/input.js";
 import { Runtime } from "../engine/bootstrap.js";
+import { DeterministicVM, prepareItemUse } from "../engine/vm.js";
+const ITEM_USE_PROTOCOL = { walk_command: "walk", take_command: "take", player_actor: "player", use_animation: "use" };
 
 test("runtime saves deterministically round-trip durable world state", () => {
   const runtime = {
@@ -292,7 +294,7 @@ test("ground item use walks, takes, approaches, and uses in order", () => {
   const world = { inventory: [], entities: {
     player: { visible: "true" }, key: { visible: "true" }, door: { visible: "true" }
   }, rooms: {} };
-  assert.deepEqual(prepareItemUse(commands, world).map(({ op, target }) => [op, target]), [
+  assert.deepEqual(prepareItemUse(commands, world, ITEM_USE_PROTOCOL).map(({ op, target }) => [op, target]), [
     ["walk", "key"], ["take", "key"], ["walk", "door"], ["animate", undefined], ["set", "door.open"]
   ]);
 });
@@ -308,7 +310,7 @@ test("inventory item use never returns to the item's former room position", () =
   const world = { inventory: ["key"], entities: {
     player: { visible: "true" }, key: { visible: "false" }, door: { visible: "true" }
   }, rooms: {} };
-  assert.deepEqual(prepareItemUse(commands, world).map(({ op, target }) => [op, target]), [
+  assert.deepEqual(prepareItemUse(commands, world, ITEM_USE_PROTOCOL).map(({ op, target }) => [op, target]), [
     ["walk", "door"], ["animate", undefined], ["say", undefined]
   ]);
 });
@@ -316,13 +318,13 @@ test("inventory item use never returns to the item's former room position", () =
 test("an invalid item-use tail rejects the entire transaction", () => {
   const commands = [{ op: "walk", actor: "player", target: "key" }, { op: "take", target: "key" }, { op: "walk", actor: "player", target: "missing" }];
   const world = { inventory: [], entities: { player: { visible: "true" }, key: { visible: "true" } }, rooms: {} };
-  assert.equal(prepareItemUse(commands, world), null);
+  assert.equal(prepareItemUse(commands, world, ITEM_USE_PROTOCOL), null);
 });
 
 const fallbackRuntime = (handlers = []) => {
   const runtime = Object.create(Runtime.prototype);
   Object.assign(runtime, {
-    handlers, room: "hall", queue: [], globals: {}, roomState: { hall: {} }, inventory: [],
+    handlers, game: { protocol: { walk_command: "walk", take_command: "take", player_actor: "player", look_verb: "look", use_verb: "use", use_animation: "use", pickup_animation: "pickup" } }, room: "hall", queue: [], globals: {}, roomState: { hall: {} }, inventory: [],
     entities: { player: { moving: false }, door: { label: "painted door", visible: "true" }, key: { label: "brass key", visible: "true" } },
     inventoryEntities: {}, items: { key: { label: "small brass key" } }, rooms: {}, ui: {
       verb_panel: { verbs: "" },
@@ -362,7 +364,7 @@ test("a rejected item transaction narrates without walking or animating", () => 
   Object.assign(runtime, { interactive: true, activeVerb: "use", firstObject: "key", actionSentence: "", hoverTarget: null });
   runtime.inventoryLayout = () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} });
   runtime.targetAt = () => "door";
-  runtime.pointer({ preventDefault() {}, button: 0 }, 0, [10, 10]);
+  runtime.action({ type: "pointer", button: 0, point: [10, 10] });
   assert.deepEqual(runtime.queue, [{ op: "narrate", value: "No brass key with painted door." }]);
 });
 
@@ -377,12 +379,12 @@ test("a touch tap dispatches its pointer action exactly once", () => {
     doubleTouchMilliseconds: 350,
     doubleTouchMoveTolerance: 12,
     lastTap: null,
-    pointer: (...args) => calls.push(args)
+    action: (...args) => calls.push(args)
   });
   const event = { pointerType: "touch", pointerId: 7, preventDefault() {} };
   runtime.pointerUp(event);
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].slice(1), [0, [10, 20], null]);
+  assert.deepEqual(calls[0], [{ type: "pointer", button: 0, point: [10, 20], fast: null }]);
 });
 
 test("the secondary pointer action looks at the touched target", () => {
@@ -633,4 +635,22 @@ on enter() {
   scheduler.start(command.definition, command.args, command.ownerRoom);
   scheduler.cancelRoom("garden"); scheduler.step(); scheduler.step(); scheduler.step();
   assert.deepEqual(effects, []);
+});
+
+test("browser bootstrap contains no authoritative interaction methods or package identities", async () => {
+  const host = await readFile(new URL("../engine/bootstrap.js", import.meta.url), "utf8");
+  for (const method of ["activateFocused", "pointer", "perform", "execute", "performBackground", "updateTriggers", "enter", "fallbackCommands"]) {
+    assert.doesNotMatch(host, new RegExp(`\\n\\s{2}${method}\\(`), `${method} must be VM-owned`);
+  }
+  assert.doesNotMatch(host, /That doesn't work|rooms\.(?:hall|garden|title)|placeholder\.actor/);
+});
+
+test("VM accepts normalized actions and returns detached immutable snapshots", () => {
+  const vm = Object.create(DeterministicVM.prototype);
+  Object.assign(vm, { room: "r", entities: { actor: { position: [1, 2] } }, inventory: [], inventoryEntities: {}, queue: [], message: "", messageKind: "", actionSentence: "", activeVerb: null, firstObject: null, tick: 0, shakeTicks: 0 });
+  const scene = vm.sceneSnapshot();
+  assert.ok(Object.isFrozen(scene) && Object.isFrozen(scene.entities.actor));
+  vm.entities.actor.position[0] = 9;
+  assert.equal(scene.entities.actor.position[0], 1);
+  assert.throws(() => vm.action({ type: "physical_mouse_click" }), /Unknown VM action/);
 });

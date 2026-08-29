@@ -19,42 +19,6 @@ export function shakeOffset(ticksRemaining, amplitude) {
  * the complete transaction, so an invalid tail can never leave a half-finished
  * walk/take sequence running.
  */
-export function prepareItemUse(commands, world) {
-  const inventory = new Set(world.inventory);
-  const visible = new Map(Object.entries(world.entities).map(([id, entity]) => [id, entity.visible !== "false"]));
-  const prepared = [];
-
-  for (const command of commands) {
-    if (command.op === "walk") {
-      if (!world.entities[command.actor]) return null;
-      if (command.point) prepared.push(command);
-      else if (inventory.has(command.target)) continue;
-      else if (visible.get(command.target)) prepared.push(command);
-      else return null;
-    } else if (command.op === "take") {
-      if (inventory.has(command.target)) continue;
-      if (!visible.get(command.target)) return null;
-      inventory.add(command.target);
-      visible.set(command.target, false);
-      prepared.push(command);
-    } else if (["show", "hide"].includes(command.op)) {
-      if (!visible.has(command.target)) return null;
-      visible.set(command.target, command.op === "show");
-      prepared.push(command);
-    } else if (command.op === "set") {
-      const [id] = command.target.split(".");
-      if (id !== "game" && !visible.has(id)) return null;
-      prepared.push(command);
-    } else if (command.op === "enter") {
-      if (!world.rooms[command.room]?.[`spawn.${command.spawn}`]) return null;
-      prepared.push(command);
-    } else prepared.push(command);
-  }
-
-  const lastWalk = prepared.findLastIndex(({ op }) => op === "walk");
-  prepared.splice(lastWalk + 1, 0, { op: "animate", actor: "player", animation: "use" });
-  return prepared;
-}
 
 /** Return trigger ids which have just been entered, while tracking occupancy. */
 export function enteredTriggers(point, triggers, occupied = new Set()) {
