@@ -5,7 +5,7 @@ import { BackgroundTasks, compile, instantiate, textDuration } from "../engine/s
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { bitmapPixels, loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
-import { accelerateCommandQueue, advanceCutSceneQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
+import { accelerateCommandQueue, advanceCutSceneQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, objectSuggestedVerb, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
 import { SaveStorage, snapshotRuntime, stableStringify, validateSnapshot } from "../engine/save.js";
 import { parseActionBindings } from "../engine/input.js";
 import { Runtime } from "../engine/bootstrap.js";
@@ -341,7 +341,8 @@ const fallbackRuntime = (handlers = []) => {
     handlers, game: { protocol: { walk_command: "walk", take_command: "take", player_actor: "player", look_verb: "look", use_verb: "use", use_animation: "use", pickup_animation: "pickup" } }, room: "hall", queue: [], globals: {}, roomState: { hall: {} }, inventory: [],
     entities: { player: { moving: false }, door: { label: "painted door", visible: "true" }, key: { label: "brass key", visible: "true" } },
     inventoryEntities: {}, items: { key: { label: "small brass key" } }, rooms: {}, ui: {
-      verb_panel: { verbs: "" },
+      verb_panel: { verbs: "look" },
+      "verb.look": { label: "Look", rect: "0,0,0,0" },
       "verb.open": { label: "Open", rect: "0,0,0,0" }, "verb.use": { label: "Use", object_preposition: "on", rect: "0,0,0,0" },
       "fallback.open": { text: "No opening {target}." },
       "fallback.use_item": { text: "No {first} with {second}." }
@@ -426,6 +427,24 @@ test("the secondary pointer action looks at the touched target", () => {
   assert.deepEqual(calls, [["look", "door"]]);
   assert.equal(runtime.activeVerb, null);
   assert.equal(runtime.firstObject, null);
+});
+
+test("objects customize the secondary-pointer verb with look as the default", () => {
+  assert.equal(objectSuggestedVerb({}, ["look", "take"]), "look");
+  assert.equal(objectSuggestedVerb({ suggested_verb: "take" }, ["look", "take"]), "take");
+  assert.throws(() => objectSuggestedVerb({ suggested_verb: "push" }, ["look", "take"]), /unknown verb push/);
+
+  const runtime = fallbackRuntime(), calls = [];
+  runtime.ui.verb_panel.verbs = "look, use, take";
+  runtime.entities.key.suggested_verb = "take";
+  Object.assign(runtime, { interactive: true, activeVerb: null, firstObject: null, message: "", width: 320, height: 200,
+    inventoryLayout: () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} }), targetAt: () => "key", perform: (...args) => calls.push(args) });
+  runtime.inputAction("pointer_secondary", { point: [10, 10] });
+  assert.deepEqual(calls, [["take", "key"]]);
+
+  runtime.inventory.push("key"); runtime.items.key.suggested_verb = "use";
+  runtime.inputAction("pointer_secondary", { point: [10, 10] });
+  assert.equal(runtime.activeVerb, "use"); assert.equal(runtime.firstObject, "key");
 });
 
 test("entity and room fallback scripts override generic narration in order", () => {

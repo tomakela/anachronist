@@ -134,7 +134,12 @@ export class DeterministicVM {
     const target = this.targetAt(x, y);
     if (interfacePoint(x, y, this.ui, this.width, this.height) && !target) return;
     if (button === 2) {
-      if (target) { this.clearSelection(); this.perform(this.protocolValue("look_verb"), target); }
+      if (target) {
+        this.clearSelection();
+        const verb = this.suggestedVerb(target);
+        if (verb === this.protocolValue("use_verb")) { this.activeVerb = verb; this.firstObject = target; this.hoverTarget = null; }
+        else this.perform(verb, target);
+      }
       return;
     }
     if (!this.activeVerb && this.inventory.includes(target)) return;

@@ -39,9 +39,10 @@ files below `game/`. Bitmap placeholders are stored as text-encoded assets so th
 complete game package remains portable through text-only source systems. Select
 **Use**, the key, and the door to exercise an atomic
 scripted `walk → take → walk → unlock → room change` command chain. A new
-left-click destination redirects free walking immediately, right-click defaults
-to **Look**, and either button advances displayed dialogue. Hovering an object
-previews the complete command sentence, while starting an interaction interrupts
+left-click destination redirects free walking immediately, right-click (or long touch) uses that object's `suggested_verb`, defaulting
+to **Look**. Room entities declare it in `room.ini`, and inventory objects in
+`inventory.ini`; hovering an object subtly highlights its suggested verb. Either
+button advances displayed dialogue. Hovering an object previews the complete command sentence, while starting an interaction interrupts
 the current walk. Entity `position` values denote configurable sprite origins
 (the center by default), letting walk targets line up naturally with feet or
 knees. Taking and using objects also play directional one-shot animations.
@@ -59,8 +60,7 @@ room visits.
 On touch-oriented devices, a relative drag cursor is enabled by default. A small
 settings button in the top-right switches between it and direct pointing. Relative movement is
 amplified by the package's `input.dragging_sensitivity` value, making precise
-pointing possible without covering the target. A long touch performs the same
-**Look** action as a desktop right-click. Small finger movements within the
+pointing possible without covering the target. A long touch performs the same suggested action as a desktop right-click. Small finger movements within the
 configured `input.long_touch_move_tolerance` do not cancel a long touch. The
 verb and inventory panels are UI only: touching their unused space never starts
 walking or displays “Walk to”.
