@@ -1,3 +1,16 @@
 on inventory.fallen_clock.look() {
-    say "The clock has had better moments."
+    if game.clock_cleaned == true {
+        say "Its clean face is stopped at twelve minutes past three."
+    } else {
+        say "The clock has had better moments. Its face is filthy."
+    }
+}
+
+on inventory.fallen_clock.use_item(item) {
+    if item == handkerchief {
+        set game.clock_cleaned = true
+        say "I polish the clock face with the handkerchief."
+    } else {
+        say "That will not clean or repair the clock."
+    }
 }

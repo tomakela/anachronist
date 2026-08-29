@@ -1,3 +1,16 @@
 on inventory.notebook.look() {
-    say "A notebook ready for important observations."
+    if game.notes_written == true {
+        say "My notebook records the strange time shown by the fallen clock."
+    } else {
+        say "A notebook ready for important observations."
+    }
+}
+
+on inventory.notebook.use_item(item) {
+    if item == pencil {
+        set game.notes_written = true
+        say "I use the pencil to record everything I have noticed so far."
+    } else {
+        say "That will not help me write in the notebook."
+    }
 }

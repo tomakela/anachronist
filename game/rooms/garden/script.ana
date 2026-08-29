@@ -27,19 +27,6 @@ on fountain.look() {
     }
 }
 
-on fountain.use_item(item) {
-    if item == coin {
-        walk player to fountain
-        remove coin from inventory
-        set fountain.graphic = placeholder.fountain_splash
-        set game.coin_thrown = true
-        shake 8 ticks
-        say "I toss the coin and make a wish."
-    } else {
-        say "That would not improve the fountain."
-    }
-}
-
 on wire.look() {
     if game.wire_fixed == true {
         say "The key bridges the gap. The circuit is complete."
@@ -64,28 +51,49 @@ on lamp.look() {
     if game.lamp_on == true {
         say "The repaired circuit makes the lamp glow warmly."
     } else {
-        say "An electric lamp with a small switch."
+        say "The switch is missing its button. A narrow stick might reach the mechanism."
     }
 }
 
 on lamp.open() {
-    if game.wire_fixed == true {
-        walk player to lamp
-        set lamp.graphic = placeholder.lamp_on
-        set game.lamp_on = true
-        say "The lamp flickers to life."
-    } else {
-        say "The switch clicks, but the broken circuit supplies no power."
-    }
+    say "There is no button to press. I need something narrow to reach inside."
 }
 
 on lamp.close() {
-    if game.lamp_on == true {
-        walk player to lamp
-        set lamp.graphic = placeholder.lamp_off
-        set game.lamp_on = false
-        say "The lamp goes dark."
+    say "There is no button to press. I need something narrow to reach inside."
+}
+
+on lamp.use_item(item) {
+    if item == stick {
+        if game.wire_fixed == false {
+            say "The stick reaches the switch mechanism, but the broken circuit supplies no power."
+        } else {
+            if game.lamp_on == true {
+                walk player to lamp
+                set lamp.graphic = placeholder.lamp_off
+                set game.lamp_on = false
+                say "I push the hidden mechanism with the stick. The lamp goes dark."
+            } else {
+                walk player to lamp
+                set lamp.graphic = placeholder.lamp_on
+                set game.lamp_on = true
+                say "I push the hidden mechanism with the stick. The lamp flickers to life."
+            }
+        }
     } else {
-        say "The lamp is already off."
+        say "That will not fit into the empty switch socket."
+    }
+}
+
+on fountain.use_item(item) {
+    if item == coin {
+        walk player to fountain
+        remove coin from inventory
+        set fountain.graphic = placeholder.fountain_splash
+        set game.coin_thrown = true
+        shake 8 ticks
+        say "I toss the coin and make a wish."
+    } else {
+        say "That would not improve the fountain."
     }
 }
