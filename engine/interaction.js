@@ -87,6 +87,33 @@ export function inventoryPage(itemCount, row, columns) {
   return { row: current, start: current * columns, end: Math.min(itemCount, (current + 1) * columns), up: current > 0, down: current < rows - 1 };
 }
 
+/** Move a virtual cursor by a touch delta, amplified by configured sensitivity. */
+export function dragCursor(point, delta, sensitivity, width, height) {
+  const amount = Number(sensitivity);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("dragging_sensitivity must be a positive number");
+  return [
+    Math.max(0, Math.min(width - 1, point[0] + delta[0] * amount)),
+    Math.max(0, Math.min(height - 1, point[1] + delta[1] * amount))
+  ];
+}
+
+/** True when a point belongs to the non-walkable interface at the screen foot. */
+export function interfacePoint(x, y, ui, width, height) {
+  const regions = [ui.sentence_region?.rect, ui.verb_panel?.region_rect, ui.inventory_panel?.rect]
+    .filter(Boolean).map((rect) => tupleNumbers(rect));
+  if (!ui.verb_panel?.region_rect) {
+    const verbRects = Object.entries(ui).filter(([name]) => name.startsWith("verb.")).map(([, spec]) => tupleNumbers(spec.rect));
+    regions.push(...verbRects);
+  }
+  if (!ui.inventory_panel?.rect && ui.inventory_panel?.origin) {
+    const [originX, originY] = tupleNumbers(ui.inventory_panel.origin);
+    regions.push([originX, originY, width - originX, height - originY]);
+  }
+  return regions.some((rect) => pointInside([x, y], rect));
+}
+
+const tupleNumbers = (value) => value.split(",").map((part) => Number(part.trim()));
+
 /**
  * Parse a room's semicolon-separated `y, scale` perspective stops. At least two
  * stops are required so that a room cannot silently declare a useless curve.

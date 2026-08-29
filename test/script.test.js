@@ -5,7 +5,7 @@ import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
-import { bitmapWalkRegion, enteredTriggers, entityRenderOrder, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, verbSentence } from "../engine/interaction.js";
+import { bitmapWalkRegion, dragCursor, enteredTriggers, entityRenderOrder, interfacePoint, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, verbSentence } from "../engine/interaction.js";
 
 const pixelCanvas = (width, height, values) => () => {
   const image = { data: new Uint8ClampedArray(values) };
@@ -191,6 +191,19 @@ test("inventory rows clamp and enable only useful arrows", () => {
   assert.deepEqual(inventoryPage(4, 0, 4), { row: 0, start: 0, end: 4, up: false, down: false });
   assert.deepEqual(inventoryPage(5, 0, 4), { row: 0, start: 0, end: 4, up: false, down: true });
   assert.deepEqual(inventoryPage(5, 1, 4), { row: 1, start: 4, end: 5, up: true, down: false });
+});
+
+test("drag cursor movement applies sensitivity and clamps to the game", () => {
+  assert.deepEqual(dragCursor([100, 50], [4, -2], 2.25, 320, 200), [109, 45.5]);
+  assert.deepEqual(dragCursor([318, 1], [4, -2], 2, 320, 200), [319, 0]);
+  assert.throws(() => dragCursor([0, 0], [1, 1], 0, 320, 200), /positive number/);
+});
+
+test("verb and inventory interface points are not walk destinations", async () => {
+  const ui = parseIni(await readFile(new URL("../game/interface.ini", import.meta.url), "utf8"));
+  assert.equal(interfacePoint(10, 160, ui, 320, 200), true);
+  assert.equal(interfacePoint(200, 180, ui, 320, 200), true);
+  assert.equal(interfacePoint(200, 100, ui, 320, 200), false);
 });
 
 test("room perspective scaling interpolates and clamps between y stops", () => {
