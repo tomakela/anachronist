@@ -23,6 +23,26 @@ on door.walk() {
     }
 }
 
+on door.look() {
+    if game.door_open == true {
+        say "The door stands open to the garden."
+    } else {
+        say "A sturdy door leading to the garden."
+    }
+}
+
+on clock.look() {
+    say "The clock seems a little unsteady."
+}
+
+on fallen_clock.look() {
+    say "The clock has had better moments."
+}
+
+on key.look() {
+    say "A small brass key."
+}
+
 on trigger.enter(region) {
     if region == garden {
       if game.door_open == true {
@@ -102,3 +122,6 @@ on bush.look() {
     }
 }
 
+on stick.look() {
+    say "A useful-looking stick."
+}

@@ -1,0 +1,3 @@
+on look() {
+    say "A notebook ready for important observations."
+}

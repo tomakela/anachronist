@@ -1,0 +1,3 @@
+on look() {
+    say "The clock has had better moments."
+}
