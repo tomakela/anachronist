@@ -2,7 +2,7 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { loadBitmaps } from "./bitmaps.js";
-import { bitmapWalkRegion, enteredTriggers, entityRenderOrder, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, verbSentence } from "./interaction.js";
+import { bitmapWalkRegion, dragCursor, enteredTriggers, entityRenderOrder, interfacePoint, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, verbSentence } from "./interaction.js";
 
 const root = document.querySelector("#engine-host");
 const entry = document.querySelector('meta[name="game-entry"]')?.content;
@@ -36,16 +36,37 @@ class Runtime {
     const aspect = this.width / this.height;
     this.canvas.style.aspectRatio = `${this.width} / ${this.height}`; this.canvas.style.setProperty("--game-width", `min(100vw, ${aspect * 100}vh)`); this.canvas.style.setProperty("--game-height", `min(100vh, ${100 / aspect}vw)`);
     this.canvas.setAttribute("aria-label", ui.interface.accessible_label); this.canvas.tabIndex = 0; this.ctx = this.canvas.getContext("2d"); this.ctx.imageSmoothingEnabled = false;
-    root.replaceChildren(this.canvas); root.ariaBusy = "false";
+    this.coarsePointer = matchMedia("(pointer: coarse)").matches;
+    this.cursorMode = localStorage.getItem("anachronist.cursor-mode") || "direct";
+    this.draggingSensitivity = Number(game.input.dragging_sensitivity);
+    if (!Number.isFinite(this.draggingSensitivity) || this.draggingSensitivity <= 0) throw new Error("dragging_sensitivity must be a positive number");
+    this.longTouchMilliseconds = integer(game.input.long_touch_milliseconds, "long touch milliseconds");
+    this.touchCursor = [this.width / 2, this.height / 2]; this.touch = null;
+    root.replaceChildren(this.canvas, this.settings()); root.ariaBusy = "false";
   }
   start() {
     this.dispatch("game.start", []);
-    this.canvas.addEventListener("pointerdown", (event) => this.pointer(event));
-    this.canvas.addEventListener("pointermove", (event) => this.hover(event));
+    this.canvas.addEventListener("pointerdown", (event) => this.pointerDown(event));
+    this.canvas.addEventListener("pointermove", (event) => this.pointerMove(event));
+    this.canvas.addEventListener("pointerup", (event) => this.pointerUp(event));
+    this.canvas.addEventListener("pointercancel", (event) => this.cancelTouch(event));
     this.canvas.addEventListener("pointerleave", () => { this.hoverTarget = null; });
     this.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     this.canvas.addEventListener("keydown", (event) => { if (event.key === "Escape") this.clearSelection(); });
     this.canvas.focus(); this.last = performance.now(); requestAnimationFrame((now) => this.frame(now));
+  }
+  settings() {
+    const wrapper = document.createElement("div"); wrapper.className = "mobile-settings"; wrapper.hidden = !this.coarsePointer;
+    const button = document.createElement("button"); button.type = "button"; button.textContent = "⚙"; button.ariaLabel = "Touch settings"; button.ariaExpanded = "false";
+    const choices = document.createElement("fieldset"); choices.hidden = true;
+    const legend = document.createElement("legend"); legend.textContent = "Touch cursor"; choices.append(legend);
+    for (const [value, label] of [["direct", "Point where I touch"], ["drag", "Drag cursor"]]) {
+      const row = document.createElement("label"), radio = document.createElement("input"); radio.type = "radio"; radio.name = "cursor-mode"; radio.value = value; radio.checked = this.cursorMode === value;
+      radio.addEventListener("change", () => { this.cursorMode = value; localStorage.setItem("anachronist.cursor-mode", value); });
+      row.append(radio, ` ${label}`); choices.append(row);
+    }
+    button.addEventListener("click", () => { choices.hidden = !choices.hidden; button.ariaExpanded = String(!choices.hidden); });
+    wrapper.append(button, choices); return wrapper;
   }
   scriptState() { return { game: this.globals }; }
   dispatch(event, args) { const handler = this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length); if (!handler) return 0; const commands = instantiate(handler, args, this.scriptState()); this.queue.push(...commands); return commands.length; }
@@ -71,18 +92,45 @@ class Runtime {
     this.dispatch("room.enter", [id]);
   }
   eventPoint(event) { const rect = this.canvas.getBoundingClientRect(); return [(event.clientX - rect.left) * this.width / rect.width, (event.clientY - rect.top) * this.height / rect.height]; }
-  hover(event) { const [x, y] = this.eventPoint(event); this.hoverTarget = this.targetAt(x, y); }
-  pointer(event) {
+  hover(event) { const [x, y] = this.eventPoint(event); this.updateHover(x, y); }
+  updateHover(x, y) {
+    const target = this.targetAt(x, y);
+    this.hoverTarget = interfacePoint(x, y, this.ui, this.width, this.height) && !this.activeVerb ? null : target;
+  }
+  pointerDown(event) {
+    if (event.pointerType !== "touch") { this.pointer(event); return; }
+    if (this.touch) return;
+    event.preventDefault(); this.canvas.setPointerCapture(event.pointerId);
+    const point = this.eventPoint(event); if (this.cursorMode === "direct") this.touchCursor = point;
+    this.touch = { id: event.pointerId, last: point, moved: false, long: false };
+    const pointerId = event.pointerId;
+    this.touch.timer = setTimeout(() => { if (this.touch?.id !== pointerId || this.touch.moved) return; this.touch.long = true; this.pointer(event, 2, this.touchCursor); }, this.longTouchMilliseconds);
+  }
+  pointerMove(event) {
+    if (event.pointerType !== "touch") { this.hover(event); return; }
+    if (!this.touch || this.touch.id !== event.pointerId) return;
+    const point = this.eventPoint(event), delta = [point[0] - this.touch.last[0], point[1] - this.touch.last[1]];
+    if (Math.hypot(...delta) > 1) this.touch.moved = true;
+    if (this.cursorMode === "direct") this.touchCursor = point;
+    else this.touchCursor = dragCursor(this.touchCursor, delta, this.draggingSensitivity, this.width, this.height);
+    this.touch.last = point; this.updateHover(...this.touchCursor);
+  }
+  pointerUp(event) {
+    if (event.pointerType !== "touch" || !this.touch || this.touch.id !== event.pointerId) return;
+    clearTimeout(this.touch.timer); if (!this.touch.long) this.pointer(event, 0, this.touchCursor); this.touch = null;
+  }
+  cancelTouch(event) { if (this.touch?.id === event.pointerId) { clearTimeout(this.touch.timer); this.touch = null; } }
+  pointer(event, button = event.button, point = this.eventPoint(event)) {
     event.preventDefault();
-    if (event.button === 2) this.clearSelection();
-    const [x, y] = this.eventPoint(event);
-    if (event.button === 0) {
+    if (button === 2) this.clearSelection();
+    const [x, y] = point;
+    if (button === 0) {
       const inventory = this.inventoryLayout();
       if (inside(x, y, inventory.upRect) && inventory.page.up) { this.inventoryRow--; return; }
       if (inside(x, y, inventory.downRect) && inventory.page.down) { this.inventoryRow++; return; }
     }
     let selectedVerb = null;
-    if (event.button === 0) for (const verb of list(this.ui.verb_panel.verbs)) { const box = tuple(this.ui[`verb.${verb}`].rect, 4, verb); if (inside(x, y, box)) { selectedVerb = verb; break; } }
+    if (button === 0) for (const verb of list(this.ui.verb_panel.verbs)) { const box = tuple(this.ui[`verb.${verb}`].rect, 4, verb); if (inside(x, y, box)) { selectedVerb = verb; break; } }
     if (this.message) {
       this.dismissMessage();
       // A verb click still advances dialogue, but becomes a selection when it
@@ -92,8 +140,10 @@ class Runtime {
     }
     if (selectedVerb) { this.stopWalking(); this.activeVerb = selectedVerb; this.firstObject = null; return; }
     const target = this.targetAt(x, y);
-    if (event.button === 2) { this.perform("look", target); return; }
-    if (event.button !== 0) return;
+    if (button === 2) { this.perform("look", target); return; }
+    if (button !== 0) return;
+    if (interfacePoint(x, y, this.ui, this.width, this.height) && !target) return;
+    if (!this.activeVerb && this.inventory.includes(target)) return;
     if (!this.activeVerb) {
       this.interruptCommands(); this.actionSentence = target ? `Walk to ${this.label(target)}` : "Walk to";
       if (!target) this.queue = [{ op: "walk", actor: "player", point: [Math.round(x), Math.round(y)], manual: true }];
@@ -175,6 +225,7 @@ class Runtime {
     const walking = this.queue[0]?.op === "walk" ? `Walk to ${this.label(this.queue[0].target)}` : "";
     this.textRegion(this.ui.sentence_region, this.actionSentence || walking || hoverSentence || composing);
     for (const verb of list(this.ui.verb_panel.verbs)) { const spec = this.ui[`verb.${verb}`]; this.panel(spec.rect, spec.label, this.activeVerb === verb); }
+    if (this.coarsePointer) this.cursor(this.touchCursor);
     c.restore();
   }
   label(id) { return this.entities[id]?.label || this.inventoryEntities[id]?.label || id?.replaceAll("_", " ") || ""; }
@@ -203,6 +254,10 @@ class Runtime {
     const [x, y, w, h] = rect, centerX = x + w / 2, centerY = y + h / 2, sign = direction === "up" ? -1 : 1;
     this.ctx.fillStyle = this.ui.palette.panel; this.ctx.fillRect(x, y, w, h); this.ctx.strokeStyle = this.ui.palette.border; this.ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
     this.ctx.fillStyle = enabled ? this.ui.palette.text : (this.ui.palette.disabled || "#687080"); this.ctx.beginPath(); this.ctx.moveTo(centerX, centerY + sign * 4); this.ctx.lineTo(centerX - 5, centerY + sign * -3); this.ctx.lineTo(centerX + 5, centerY + sign * -3); this.ctx.closePath(); this.ctx.fill();
+  }
+  cursor([x, y]) {
+    const c = this.ctx; c.save(); c.translate(Math.round(x) + .5, Math.round(y) + .5); c.strokeStyle = "#fff"; c.fillStyle = "#101b34"; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(0, 12); c.lineTo(3, 9); c.lineTo(6, 15); c.lineTo(9, 13); c.lineTo(6, 8); c.lineTo(11, 8); c.closePath(); c.fill(); c.stroke(); c.restore();
   }
 }
 const inside = (x, y, [bx, by, bw, bh]) => x >= bx && y >= by && x < bx + bw && y < by + bh;

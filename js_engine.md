@@ -99,6 +99,11 @@ Mobile behavior includes:
 - safe handling of the on-screen keyboard; and
 - audio startup deferred until a user gesture when the browser requires it.
 
+The current canvas host offers direct-touch and relative drag-cursor pointing
+modes from a compact top-right settings control. Drag movement is multiplied by
+the positive package value `input.dragging_sensitivity`; long touch maps to the
+same semantic behavior as a secondary mouse click.
+
 Desktop behavior includes mouse buttons, keyboard actions, optional gamepad
 mapping, focus restoration, and context-menu policy. Bindings are declared by
 the package; the host only converts physical input into declared action IDs.

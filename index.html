@@ -8,8 +8,13 @@
     <style>
       html, body, #engine-host { width: 100%; height: 100%; margin: 0; overflow: hidden; }
       body { background: #000; }
-      #engine-host { display: grid; place-items: center; }
-      canvas { display: block; width: var(--game-width); height: var(--game-height); image-rendering: pixelated; cursor: crosshair; outline: none; }
+      #engine-host { display: grid; place-items: center; position: relative; }
+      canvas { display: block; width: var(--game-width); height: var(--game-height); image-rendering: pixelated; cursor: crosshair; outline: none; touch-action: none; }
+      .mobile-settings { position: fixed; z-index: 2; top: max(6px, env(safe-area-inset-top)); right: max(6px, env(safe-area-inset-right)); }
+      .mobile-settings > button { width: 34px; height: 34px; padding: 0; border: 1px solid #d3a94f; border-radius: 4px; color: #f4d58a; background: #101b34; font-size: 18px; }
+      .mobile-settings fieldset { position: absolute; top: 38px; right: 0; width: max-content; margin: 0; padding: 10px; border: 1px solid #d3a94f; color: #f4d58a; background: #101b34; font: 14px sans-serif; }
+      .mobile-settings label { display: block; padding: 5px 2px; }
+      .mobile-settings[hidden], .mobile-settings fieldset[hidden] { display: none; }
     </style>
   </head>
   <body>
