@@ -176,6 +176,49 @@ export function entityIsInteractive(entity) {
   return entity?.visible !== "false" && entity?.interactive !== "false";
 }
 
+/** Parse an absolute room-space rectangle or polygon declared by an entity. */
+export function entityHotspot(entity) {
+  if (entity.hotspot_rect) {
+    const values = tupleNumbers(entity.hotspot_rect);
+    if (values.length !== 4 || !values.every(Number.isFinite) || values[2] < 0 || values[3] < 0) throw new Error(`${entity.id}.hotspot_rect: expected x,y,width,height`);
+    return { kind: "rect", points: values };
+  }
+  if (entity.hotspot_polygon) {
+    const points = entity.hotspot_polygon.split(";").map((part) => tupleNumbers(part.trim()));
+    if (points.length < 3 || points.some((point) => point.length !== 2 || !point.every(Number.isFinite))) throw new Error(`${entity.id}.hotspot_polygon: expected at least three x,y points`);
+    return { kind: "polygon", points };
+  }
+  return null;
+}
+
+export function pointInHotspot(point, hotspot) {
+  if (hotspot.kind === "rect") return pointInside(point, hotspot.points);
+  let inside = false;
+  for (let i = 0, j = hotspot.points.length - 1; i < hotspot.points.length; j = i++) {
+    const [xi, yi] = hotspot.points[i], [xj, yj] = hotspot.points[j];
+    if ((yi > point[1]) !== (yj > point[1]) && point[0] < (xj - xi) * (point[1] - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** Pick the visually topmost hit; hotspot_priority can deliberately override z order. */
+export function entityTargetAt(point, entities, hit) {
+  return entityRenderOrder(entities).map((entity, order) => ({ entity, order }))
+    .filter(({ entity }) => entity.id !== "player" && entityIsInteractive(entity) && hit(entity, point))
+    .sort((a, b) => Number(a.entity.hotspot_priority || 0) - Number(b.entity.hotspot_priority || 0) || a.order - b.order)
+    .at(-1)?.entity.id;
+}
+
+/** Map a room point through sprite scale/rotation and test cached source-frame alpha. */
+export function spriteAlphaHit(point, bounds, source, pixels, rotation = 0) {
+  const [x, y, w, h] = bounds, angle = -Number(rotation) * Math.PI / 180;
+  let dx = point[0] - (x + w / 2), dy = point[1] - (y + h / 2);
+  [dx, dy] = [dx * Math.cos(angle) - dy * Math.sin(angle), dx * Math.sin(angle) + dy * Math.cos(angle)];
+  const [sx, sy, sw, sh] = source;
+  const px = Math.floor(sx + (dx / w + .5) * sw), py = Math.floor(sy + (dy / h + .5) * sh);
+  return px >= sx && py >= sy && px < sx + sw && py < sy + sh && pixels.data[(py * pixels.width + px) * 4 + 3] > 0;
+}
+
 /** Turn a black/transparent bitmap mask into a logical-room point predicate. */
 export function bitmapWalkRegion(bitmap, logicalWidth, logicalHeight, canvasFactory = () => document.createElement("canvas")) {
   if (!bitmap) throw new Error("walk_mask references an unknown graphic");
