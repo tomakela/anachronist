@@ -5,6 +5,7 @@ on game.start() {
     set game.door_open = false;
     set game.door_unlocked = false;
     set game.clock_fallen = false;
+    set game.fallen_clock_taken = false;
     enter room hall at entry;
     narrate "Find a way into the garden.";
 }
@@ -47,7 +48,11 @@ on room.enter(room) {
         }
         if (game.clock_fallen == true) {
             hide clock;
-            show fallen_clock;
+            if (game.fallen_clock_taken == false) {
+                show fallen_clock;
+            } else {
+                hide fallen_clock;
+            }
         }
     }
 }
@@ -60,11 +65,17 @@ on entity.take(target) {
         set game.clock_fallen = true;
         say "Ooops";
     } else {
-        take target;
-        if (target == key) {
-            set game.key_taken = true;
+        if (target == fallen_clock) {
+            take target;
+            set game.fallen_clock_taken = true;
+            say "Taken.";
+        } else {
+            take target;
+            if (target == key) {
+                set game.key_taken = true;
+            }
+            say "Taken.";
         }
-        say "Taken.";
     }
 }
 
