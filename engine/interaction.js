@@ -94,6 +94,29 @@ export function interpolatedScale(y, stops) {
   return stops.at(-1)[1];
 }
 
+/** Sort scenery and actors back-to-front. Explicit depth wins; y is the default. */
+export function entityRenderOrder(entities) {
+  return Object.values(entities).sort((a, b) => {
+    const depth = (entity) => entity.depth === undefined ? entity.position[1] : Number(entity.depth);
+    return depth(a) - depth(b) || a.id.localeCompare(b.id);
+  });
+}
+
+/** Turn a black/transparent bitmap mask into a logical-room point predicate. */
+export function bitmapWalkRegion(bitmap, logicalWidth, logicalHeight, canvasFactory = () => document.createElement("canvas")) {
+  if (!bitmap) throw new Error("walk_mask references an unknown graphic");
+  const canvas = canvasFactory(); canvas.width = bitmap.width; canvas.height = bitmap.height;
+  const context = canvas.getContext("2d", { willReadFrequently: true }); context.drawImage(bitmap, 0, 0);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  return ([x, y]) => {
+    if (x < 0 || y < 0 || x >= logicalWidth || y >= logicalHeight) return false;
+    const px = Math.min(canvas.width - 1, Math.floor(x * canvas.width / logicalWidth));
+    const py = Math.min(canvas.height - 1, Math.floor(y * canvas.height / logicalHeight));
+    const offset = (py * canvas.width + px) * 4;
+    return pixels[offset + 3] > 0 && (pixels[offset] > 0 || pixels[offset + 1] > 0 || pixels[offset + 2] > 0);
+  };
+}
+
 const pointInside = ([x, y], [bx, by, bw, bh]) => x >= bx && y >= by && x < bx + bw && y < by + bh;
 
 const title = (value) => value[0].toUpperCase() + value.slice(1);
