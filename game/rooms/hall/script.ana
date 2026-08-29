@@ -36,7 +36,11 @@ on clock.look() {
 }
 
 on fallen_clock.look() {
-    say "The clock has had better moments."
+    if game.clock_cleaned == true {
+        say "The clean face is stopped at twelve minutes past three."
+    } else {
+        say "The clock has had better moments. Its face is filthy."
+    }
 }
 
 on key.look() {
@@ -88,7 +92,18 @@ on door.use_item(item) {
             say "The key turns in the lock."
         }
     } else {
-        say "I can't do that."
+        if item == fallen_clock {
+            if game.door_open == true {
+                walk player to door
+                remove fallen_clock from inventory
+                set game.door_propped = true
+                say "The fallen clock makes an excellent doorstop."
+            } else {
+                say "I need to open the door before I can prop it open."
+            }
+        } else {
+            say "I can't do that."
+        }
     }
 }
 
@@ -104,22 +119,35 @@ on door.open() {
 }
 
 on door.close() {
-    if game.door_open == true {
-        walk player to door
-        set door.open = false
-        set door.graphic = placeholder.door
-        set game.door_open = false
+    if game.door_propped == true {
+        say "The fallen clock is holding the door open."
+    } else {
+        if game.door_open == true {
+            walk player to door
+            set door.open = false
+            set door.graphic = placeholder.door
+            set game.door_open = false
+        }
     }
 }
 
 on bush.look() {
     if game.stick_found == false {
-        walk player to bush
-        take stick
-        set game.stick_found = true
-        say "Found a stick"
+        say "The dry bush has something caught deep between its branches."
     } else {
         say "There is nothing else in the bush."
+    }
+}
+
+on bush.use_item(item) {
+    if item == coffee_cup {
+        walk player to bush
+        remove coffee_cup from inventory
+        take stick
+        set game.stick_found = true
+        say "I pour the last of the coffee onto the roots. A stick washes free."
+    } else {
+        say "That will not coax anything out of the bush."
     }
 }
 

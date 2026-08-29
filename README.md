@@ -48,9 +48,13 @@ knees. Taking and using objects also play directional one-shot animations.
 Each room's mutable entity state is retained between visits, so a taken object
 cannot reappear at its old room position when the player returns. The demo also
 records key acquisition in the persistent `game.key_taken` global for its game
-logic. In the garden, the coin can be thrown into the fountain, the key can
-bridge a broken wire, and the newly powered lamp can then be switched on with
-**Open** and off with **Close**. These puzzle changes persist across room visits.
+logic. The supplied inventory now forms a set of small puzzles: coffee coaxes a
+stick from the dry bush, the pencil writes in the notebook, the handkerchief
+cleans the fallen clock, and that clock can prop open the unlocked door. In the
+garden, the coin can be thrown into the fountain and the key can bridge a broken
+wire. The lamp's switch button is missing, so its newly powered mechanism can
+only be toggled by using the stick on it. These puzzle changes persist across
+room visits.
 
 On touch-oriented devices, a relative drag cursor is enabled by default. A small
 settings button in the top-right switches between it and direct pointing. Relative movement is
