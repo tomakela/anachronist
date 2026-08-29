@@ -1,3 +1,3 @@
-on look() {
+on inventory.pencil.look() {
     say "A freshly sharpened pencil."
 }

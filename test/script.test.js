@@ -5,10 +5,7 @@ import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { bitmapPixels, loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
-import { bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
-import { loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
-import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
-import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
+import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
 import { SaveStorage, snapshotRuntime, stableStringify, validateSnapshot } from "../engine/save.js";
 
 test("runtime saves deterministically round-trip durable world state", () => {
@@ -134,11 +131,13 @@ test("target focus stays on an object or moves predictably when it disappears", 
   assert.deepEqual(reconcileTargetFocus([], "door", 0), { id: null, index: -1 });
 });
 
-test("inventory item scripts lower unqualified handlers to their item", () => {
-  const [handler] = compile('on look() {\n say "Portable"\n}', { itemId: "coffee_cup" });
-  assert.deepEqual([handler.event, handler.localTarget], ["entity.look", "coffee_cup"]);
+test("inventory item scripts use an explicit namespace", () => {
+  const [handler] = compile('on inventory.coffee_cup.look() {\n say "Portable"\n}', { itemId: "coffee_cup" });
+  assert.deepEqual([handler.event, handler.localTarget, handler.inventoryOnly], ["entity.look", "coffee_cup", true]);
   assert.equal(instantiate(handler, ["coffee_cup"])[0].value, "Portable");
   assert.deepEqual(instantiate(handler, ["coin"]), []);
+  assert.throws(() => compile('on inventory.coin.look() {\n}', { itemId: "coffee_cup" }), /invalid inventory event/);
+  assert.throws(() => compile('on look() {\n}', { itemId: "coffee_cup" }), /must reference inventory\.coffee_cup/);
 });
 
 test("every demo object responds to the look action used by long touch", async () => {
@@ -151,9 +150,9 @@ test("every demo object responds to the look action used by long touch", async (
   for (const [room, entities] of roomSpecs) {
     handlers.push(...compile(await readFile(new URL(`../game/rooms/${room}/script.ana`, import.meta.url), "utf8"), { roomId: room, entities }));
   }
-  const itemIndex = parseIni(await readFile(new URL("../game/items/index.ini", import.meta.url), "utf8"));
+  const itemIndex = parseIni(await readFile(new URL("../game/items/inventory.ini", import.meta.url), "utf8"));
   for (const item of itemIndex.catalogue.items.split(",").map((value) => value.trim())) {
-    const script = itemIndex[`item.${item}`].script;
+    const script = itemIndex[`inventory.${item}`].script;
     handlers.push(...compile(await readFile(new URL(`../game/items/${script}`, import.meta.url), "utf8"), { itemId: item }));
   }
 
@@ -325,7 +324,7 @@ const fallbackRuntime = (handlers = []) => {
   Object.assign(runtime, {
     handlers, room: "hall", queue: [], globals: {}, roomState: { hall: {} }, inventory: [],
     entities: { player: { moving: false }, door: { label: "painted door", visible: "true" }, key: { label: "brass key", visible: "true" } },
-    inventoryEntities: {}, rooms: {}, ui: {
+    inventoryEntities: {}, items: { key: { label: "small brass key" } }, rooms: {}, ui: {
       verb_panel: { verbs: "" },
       "verb.open": { label: "Open", rect: "0,0,0,0" }, "verb.use": { label: "Use", object_preposition: "on", rect: "0,0,0,0" },
       "fallback.open": { text: "No opening {target}." },
@@ -334,6 +333,16 @@ const fallbackRuntime = (handlers = []) => {
   });
   return runtime;
 };
+
+test("ground and inventory objects with the same id dispatch separate look handlers", () => {
+  const roomHandler = compile('on key.look() {\n say "On the floor"\n}', { roomId: "hall", entities: ["key"] })[0];
+  const inventoryHandler = compile('on inventory.key.look() {\n say "Small brass key"\n}', { itemId: "key" })[0];
+  const runtime = fallbackRuntime([roomHandler, inventoryHandler]);
+  assert.equal(runtime.commands("entity.look", ["key"])[0].value, "On the floor");
+  runtime.inventory.push("key");
+  assert.equal(runtime.commands("entity.look", ["key"])[0].value, "Small brass key");
+  assert.equal(runtime.label("key"), "small brass key");
+});
 
 test("unsupported single-object verbs enqueue their configured narration", () => {
   const runtime = fallbackRuntime();

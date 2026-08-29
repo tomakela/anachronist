@@ -2,12 +2,9 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { bitmapPixels, loadBitmaps } from "./bitmaps.js";
-import { bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
-import { loadBitmaps } from "./bitmaps.js";
 import { parseActionBindings, reconcileTargetFocus } from "./input.js";
-import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
 import { SaveStorage, snapshotRuntime, validateSnapshot } from "./save.js";
-import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
+import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
 
 const root = typeof document === "undefined" ? null : document.querySelector("#engine-host");
 const entry = typeof document === "undefined" ? null : document.querySelector('meta[name="game-entry"]')?.content;
@@ -39,7 +36,7 @@ async function boot() {
     const itemPath = resolvePackagePath(base, game.package.item_catalogue), itemIndex = parseIni(await fetchText(itemPath));
     const itemBase = itemPath.slice(0, itemPath.lastIndexOf("/") + 1);
     for (const id of list(itemIndex.catalogue.items)) {
-      items[id] = itemIndex[`item.${id}`];
+      items[id] = itemIndex[`inventory.${id}`];
       const script = items[id].script;
       if (script) handlers.push(...compile(await fetchText(resolvePackagePath(itemBase, script)), { itemId: id }));
     }
@@ -47,12 +44,9 @@ async function boot() {
   new Runtime(game, ui, rooms, items, graphics, animations, bitmaps, handlers, input).start();
 }
 
-class Runtime {
+export class Runtime {
   constructor(game, ui, rooms, items, graphics, animations, bitmaps, handlers, input) {
     Object.assign(this, { game, ui, rooms, items, graphics, animations, bitmaps, handlers, input });
-export class Runtime {
-  constructor(game, ui, rooms, items, graphics, animations, bitmaps, handlers) {
-    Object.assign(this, { game, ui, rooms, items, graphics, animations, bitmaps, handlers });
     this.saveIdentity = { packageId: game.package.id, formatVersion: game.save?.format_version };
     if (!this.saveIdentity.packageId || !this.saveIdentity.formatVersion) throw new Error("package.id and save.format_version are required");
     this.storage = new SaveStorage(window.localStorage, this.saveIdentity.packageId);
@@ -214,7 +208,12 @@ export class Runtime {
     await screen.orientation?.lock?.("landscape").catch(() => {});
   }
   scriptState() { return { game: this.globals, ...this.roomState }; }
-  matchingHandler(event, args) { return this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length && (!candidate.roomId || candidate.roomId === this.room) && (!candidate.localTarget || candidate.localTarget === args.at(-1))); }
+  matchingHandler(event, args) {
+    const inventoryTarget = this.inventory.includes(args.at(-1));
+    return this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length
+      && (!candidate.roomId || candidate.roomId === this.room) && (!candidate.localTarget || candidate.localTarget === args.at(-1))
+      && (inventoryTarget ? (!candidate.roomId && candidate.inventoryOnly) : !candidate.inventoryOnly));
+  }
   dispatch(event, args) { const handler = this.matchingHandler(event, args); if (!handler) return 0; const commands = instantiate(handler, args, this.scriptState()); this.queue.push(...commands); return commands.length; }
   commands(event, args) { const handler = this.matchingHandler(event, args); return handler ? instantiate(handler, args, this.scriptState()) : null; }
   fallbackCommands(verb, args) {
@@ -298,12 +297,6 @@ export class Runtime {
   }
   cancelTouch(event) { if (this.touch?.id === event.pointerId) { clearTimeout(this.touch.timer); this.touch = null; } }
   dispatchPhysicalTouch(gesture, event, point) { event.preventDefault(); const action = this.input.touch.get(gesture); if (action) this.inputAction(action, { point, event }); }
-  pointer(event, button = event.button, point = this.eventPoint(event)) {
-    event.preventDefault();
-    const action = this.input.pointer.get(button); if (action) this.inputAction(action, { point, event });
-  }
-  secondaryAt(point) { this.clearSelection(); const [x, y] = point; this.perform("look", this.targetAt(x, y)); }
-  primaryAt(point) {
   pointer(event, button = event.button, point = this.eventPoint(event), fast = false) {
     event.preventDefault();
     if (fast && this.queue.length) { this.accelerateCommands(); return; }
@@ -420,7 +413,7 @@ export class Runtime {
     if (room && (room.room.hotspot_overlay === "true" || this.game.runtime.hotspot_overlay === "true")) this.drawHotspots();
     if (!this.interfaceVisible) { c.restore(); return; }
     const inventory = this.inventoryLayout();
-    for (const [i, id] of this.inventory.slice(inventory.page.start, inventory.page.end).entries()) this.sprite({ ...this.items[id], ...this.inventoryEntities[id], visible: "true", position: [inventory.origin[0] + i * inventory.itemWidth, inventory.origin[1]], origin: "0,0", size: `${inventory.itemWidth},${inventory.itemHeight}` });
+    for (const [i, id] of this.inventory.slice(inventory.page.start, inventory.page.end).entries()) this.sprite({ ...this.inventoryEntities[id], ...this.items[id], visible: "true", position: [inventory.origin[0] + i * inventory.itemWidth, inventory.origin[1]], origin: "0,0", size: `${inventory.itemWidth},${inventory.itemHeight}` });
     this.inventoryArrow(inventory.upRect, "up", inventory.page.up); this.inventoryArrow(inventory.downRect, "down", inventory.page.down);
     this.textRegion(this.ui.message_region, this.messageKind === "narrate" ? this.message : "");
     if (this.messageKind === "say") this.speech(this.entities.player, this.message);
@@ -442,7 +435,7 @@ export class Runtime {
     else if (this.entities[this.focusedTarget]) rect = this.bounds(this.entities[this.focusedTarget]);
     if (!rect) return; const [x, y, w, h] = rect; this.ctx.save(); this.ctx.strokeStyle = this.ui.palette.active || "#fff"; this.ctx.lineWidth = 2; this.ctx.setLineDash([3, 2]); this.ctx.strokeRect(Math.round(x) - 2, Math.round(y) - 2, Math.round(w) + 4, Math.round(h) + 4); this.ctx.restore();
   }
-  label(id) { return this.entities[id]?.label || this.inventoryEntities[id]?.label || id?.replaceAll("_", " ") || ""; }
+  label(id) { return (this.inventory.includes(id) ? this.items[id]?.label : this.entities[id]?.label) || this.inventoryEntities[id]?.label || id?.replaceAll("_", " ") || ""; }
   sprite(entity) {
     const [x, y, w, h] = this.bounds(entity), graphic = this.graphics[`graphic.${entity.graphic}`], bitmap = this.bitmaps[entity.graphic], animation = entity.id === "player" ? this.animations[`animation.${entity.action || (entity.moving ? "walking" : "idle")}_${entity.facing || "down"}`] : graphic;
     if (bitmap) { this.drawBitmap(entity, bitmap, animation?.frames ? this.currentFrame(entity) : null, x, y, w, h); return; }

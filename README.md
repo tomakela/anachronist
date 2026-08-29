@@ -103,8 +103,11 @@ a distinct target, and omits the first object from the available targets. A
 ground item transaction can walk to and take that item before approaching its
 target; an already inventoried item skips those obsolete steps. The complete
 transaction is rejected before movement if any step is invalid. Two-object use
-dispatches `entity.use_item`. Inventory items can own room-independent scripts
-through `game/items/index.ini`. The demo begins with a non-interactive,
+dispatches `entity.use_item`. Inventory presentation is defined independently
+from room entities in
+`game/items/inventory.ini`; its `graphic` and `label` always win after pickup.
+Inventory-only handlers use explicit names such as `on inventory.key.look()`, so
+a room can separately define `on key.look()` for the key lying on the floor. The demo begins with a non-interactive,
 full-display bitmap title cut scene; after two seconds it enters the hall and
 restores the verb and inventory interface. Dialogue can
 contain any number of consecutive `say` or
