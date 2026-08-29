@@ -6,6 +6,7 @@ import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
 import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "../engine/interaction.js";
+import { parseActionBindings, reconcileTargetFocus } from "../engine/input.js";
 
 const pixelCanvas = (width, height, values) => () => {
   const image = { data: new Uint8ClampedArray(values) };
@@ -79,6 +80,23 @@ test("INI variables before the first section are typed", () => {
   const ini = parseIni('ready = true\ncaption = "text here"\ncount = 2\n[room]\ninteractive = false');
   assert.deepEqual({ ...ini.$variables }, { ready: true, caption: "text here", count: 2 });
   assert.equal(ini.room.interactive, "false");
+});
+
+test("input action sections parse keyboard, pointer, and touch bindings", () => {
+  const bindings = parseActionBindings(parseIni(`[action.activate_primary]\nkeyboard_code = Enter, Space\npointer_button = primary\ntouch = tap\n[action.cancel]\nkeyboard_code = Escape`));
+  assert.equal(bindings.keyboard.get("Enter"), "activate_primary");
+  assert.equal(bindings.keyboard.get("Space"), "activate_primary");
+  assert.equal(bindings.pointer.get(0), "activate_primary");
+  assert.equal(bindings.touch.get("tap"), "activate_primary");
+  assert.equal(bindings.keyboard.get("Escape"), "cancel");
+  assert.throws(() => parseActionBindings(parseIni("[action.a]\nkeyboard_code=Enter\n[action.b]\nkeyboard_code=Enter")), /already bound/);
+});
+
+test("target focus stays on an object or moves predictably when it disappears", () => {
+  assert.deepEqual(reconcileTargetFocus([{ id: "door" }, { id: "key" }], "key", 0), { id: "key", index: 1 });
+  assert.deepEqual(reconcileTargetFocus([{ id: "door" }], "key", 1), { id: "door", index: 0 });
+  assert.deepEqual(reconcileTargetFocus([{ id: "gate" }, { id: "fountain" }], "door", 0), { id: "gate", index: 0 });
+  assert.deepEqual(reconcileTargetFocus([], "door", 0), { id: null, index: -1 });
 });
 
 test("inventory item scripts lower unqualified handlers to their item", () => {

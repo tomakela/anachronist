@@ -2,6 +2,7 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { loadBitmaps } from "./bitmaps.js";
+import { parseActionBindings, reconcileTargetFocus } from "./input.js";
 import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
 
 const root = document.querySelector("#engine-host");
@@ -15,6 +16,7 @@ async function boot() {
   const resourceBase = resourceCataloguePath.slice(0, resourceCataloguePath.lastIndexOf("/") + 1);
   const resources = parseIni(await fetchText(resourceCataloguePath));
   const ui = parseIni(await fetchText(resolvePackagePath(base, game.package.interface)));
+  const input = parseActionBindings(parseIni(await fetchText(resolvePackagePath(base, game.input.bindings))));
   const roomsIndex = parseIni(await fetchText(resolvePackagePath(base, game.package.room_catalogue)));
   const graphicsPath = resources.catalogue.graphics || game.package.graphics;
   const graphics = parseIni(await fetchText(resolvePackagePath(resourceBase, graphicsPath)));
@@ -38,12 +40,12 @@ async function boot() {
       if (script) handlers.push(...compile(await fetchText(resolvePackagePath(itemBase, script)), { itemId: id }));
     }
   }
-  new Runtime(game, ui, rooms, items, graphics, animations, bitmaps, handlers).start();
+  new Runtime(game, ui, rooms, items, graphics, animations, bitmaps, handlers, input).start();
 }
 
 class Runtime {
-  constructor(game, ui, rooms, items, graphics, animations, bitmaps, handlers) {
-    Object.assign(this, { game, ui, rooms, items, graphics, animations, bitmaps, handlers });
+  constructor(game, ui, rooms, items, graphics, animations, bitmaps, handlers, input) {
+    Object.assign(this, { game, ui, rooms, items, graphics, animations, bitmaps, handlers, input });
     this.entities = Object.create(null); this.roomEntities = Object.create(null); this.inventory = []; this.inventoryEntities = Object.create(null); this.globals = { ...game.$variables };
     this.roomState = Object.fromEntries(Object.entries(rooms).map(([id, room]) => [id, { ...room.$variables }]));
     this.activeVerb = null; this.firstObject = null; this.hoverTarget = null; this.queue = []; this.message = ""; this.messageKind = ""; this.messageTicks = 0; this.actionSentence = ""; this.tick = 0; this.shakeTicks = 0; this.inventoryRow = 0;
@@ -52,7 +54,7 @@ class Runtime {
     const aspect = this.width / this.height;
     const safeWidth = "(100dvw - env(safe-area-inset-left) - env(safe-area-inset-right))", safeHeight = "(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom))";
     this.canvas.style.aspectRatio = `${this.width} / ${this.height}`; this.canvas.style.setProperty("--game-width", `min(calc${safeWidth}, calc(${safeHeight} * ${aspect}))`); this.canvas.style.setProperty("--game-height", `min(calc${safeHeight}, calc(${safeWidth} / ${aspect}))`);
-    this.canvas.setAttribute("aria-label", ui.interface.accessible_label); this.canvas.tabIndex = 0; this.ctx = this.canvas.getContext("2d"); this.ctx.imageSmoothingEnabled = false;
+    this.canvas.setAttribute("aria-label", ui.interface.accessible_label); this.canvas.setAttribute("role", "application"); this.canvas.tabIndex = 0; this.ctx = this.canvas.getContext("2d"); this.ctx.imageSmoothingEnabled = false;
     this.coarsePointer = matchMedia("(pointer: coarse)").matches;
     this.cursorMode = localStorage.getItem("anachronist.cursor-mode") || "drag";
     this.draggingSensitivity = Number(game.input.dragging_sensitivity);
@@ -60,8 +62,11 @@ class Runtime {
     this.longTouchMilliseconds = integer(game.input.long_touch_milliseconds, "long touch milliseconds");
     this.longTouchMoveTolerance = Number(game.input.long_touch_move_tolerance ?? 8);
     if (!Number.isFinite(this.longTouchMoveTolerance) || this.longTouchMoveTolerance < 0) throw new Error("long_touch_move_tolerance must be a non-negative number");
-    this.touchCursor = [this.width / 2, this.height / 2]; this.touch = null;
-    root.replaceChildren(this.canvas, this.settings()); root.ariaBusy = "false";
+    this.touchCursor = [this.width / 2, this.height / 2]; this.touch = null; this.interactiveTargets = []; this.focusedTarget = null; this.focusedTargetIndex = 0;
+    this.accessibility = document.createElement("section"); this.accessibility.className = "game-accessibility"; this.accessibility.ariaLabel = "Interactive game targets";
+    this.accessibilityStatus = document.createElement("p"); this.accessibilityStatus.setAttribute("aria-live", "polite");
+    this.accessibilityTargets = document.createElement("div"); this.accessibilityTargets.setAttribute("role", "listbox"); this.accessibility.append(this.accessibilityStatus, this.accessibilityTargets);
+    root.replaceChildren(this.canvas, this.accessibility, this.settings()); root.ariaBusy = "false";
   }
   start() {
     this.dispatch("game.start", []);
@@ -72,8 +77,69 @@ class Runtime {
     root.addEventListener("lostpointercapture", (event) => this.cancelTouch(event));
     this.canvas.addEventListener("pointerleave", () => { this.hoverTarget = null; });
     this.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
-    this.canvas.addEventListener("keydown", (event) => { if (event.key === "Escape") this.clearSelection(); });
+    this.canvas.addEventListener("keydown", (event) => this.keyboard(event));
     this.canvas.focus(); this.last = performance.now(); requestAnimationFrame((now) => this.frame(now));
+  }
+  keyboard(event) {
+    const action = this.input.keyboard.get(event.code) || this.input.keyboard.get(event.key);
+    if (!action) return;
+    event.preventDefault(); this.inputAction(action, { event });
+  }
+  inputAction(action, detail = {}) {
+    if (!this.interactive && action !== "cancel" && action !== "dialogue_advance") return;
+    if (action === "pointer_primary") return this.primaryAt(detail.point);
+    if (action === "pointer_secondary") return this.secondaryAt(detail.point);
+    if (action === "focus_next") return this.moveFocus(1);
+    if (action === "focus_previous") return this.moveFocus(-1);
+    if (action === "inventory_next") return this.moveInventoryFocus(1);
+    if (action === "inventory_previous") return this.moveInventoryFocus(-1);
+    if (action === "activate_primary") return this.activateFocused(false);
+    if (action === "activate_secondary" || action === "verb_look") return action === "verb_look" ? this.selectVerb("look") : this.activateFocused(true);
+    if (action.startsWith("verb_")) return this.selectVerb(action.slice(5));
+    if (action === "dialogue_advance") { if (this.message) this.dismissMessage(); return; }
+    if (action === "cancel") return this.cancelInteraction();
+  }
+  selectVerb(verb) { if (this.message) this.dismissMessage(); this.stopWalking(); this.activeVerb = verb; this.firstObject = null; this.updateAccessibility(); }
+  cancelInteraction() { this.clearSelection(); this.interruptCommands(); if (this.message) this.dismissMessage(); this.actionSentence = ""; this.updateAccessibility(); }
+  refreshInteractiveTargets() {
+    const roomTargets = entityRenderOrder(this.entities).filter((entity) => entity.id !== "player" && entityIsInteractive(entity)).map((entity) => ({ id: entity.id, kind: "room" }));
+    const inventoryTargets = this.inventory.filter((id) => id !== this.firstObject).map((id) => ({ id, kind: "inventory" }));
+    const next = [...roomTargets, ...inventoryTargets], focus = reconcileTargetFocus(next, this.focusedTarget, this.focusedTargetIndex);
+    const changed = focus.id !== this.focusedTarget || next.map(({ id }) => id).join("\0") !== this.interactiveTargets.map(({ id }) => id).join("\0");
+    this.interactiveTargets = next; this.focusedTarget = focus.id; this.focusedTargetIndex = focus.index;
+    if (changed) this.updateAccessibility();
+  }
+  moveFocus(delta) {
+    this.refreshInteractiveTargets(); if (!this.interactiveTargets.length) return;
+    this.focusedTargetIndex = (this.focusedTargetIndex + delta + this.interactiveTargets.length) % this.interactiveTargets.length;
+    this.focusedTarget = this.interactiveTargets[this.focusedTargetIndex].id; this.ensureInventoryFocusVisible(); this.updateAccessibility();
+  }
+  moveInventoryFocus(delta) {
+    this.refreshInteractiveTargets(); if (!this.inventory.length) return;
+    let index = this.inventory.indexOf(this.focusedTarget); index = index < 0 ? (delta > 0 ? 0 : this.inventory.length - 1) : (index + delta + this.inventory.length) % this.inventory.length;
+    this.focusedTarget = this.inventory[index]; this.focusedTargetIndex = this.interactiveTargets.findIndex(({ id }) => id === this.focusedTarget); this.ensureInventoryFocusVisible(); this.updateAccessibility();
+  }
+  ensureInventoryFocusVisible() {
+    const index = this.inventory.indexOf(this.focusedTarget); if (index < 0) return;
+    const layout = this.inventoryLayout(), columns = Math.max(1, layout.page.end - layout.page.start || 1); this.inventoryRow = Math.floor(index / columns);
+  }
+  activateFocused(secondary) {
+    this.refreshInteractiveTargets(); const target = this.focusedTarget; if (!target) return;
+    if (this.message) { this.dismissMessage(); return; }
+    if (secondary) { this.clearSelection(); this.perform("look", target); return; }
+    if (!this.activeVerb) { if (this.inventory.includes(target)) return; this.interruptCommands(); this.actionSentence = `Walk to ${this.label(target)}`; if (!this.dispatch("entity.walk", [target])) this.queue = [{ op: "walk", actor: "player", target, manual: true }]; return; }
+    if (this.activeVerb === "use" && !this.firstObject) { this.firstObject = target; this.refreshInteractiveTargets(); return; }
+    if (this.activeVerb === "use") { this.interruptCommands(); this.actionSentence = this.verbSentence("use", this.firstObject, target); const commands = this.commands("entity.use_item", [this.firstObject, target]), prepared = commands && prepareItemUse(commands, this); if (prepared) this.queue.push(...prepared); }
+    else this.perform(this.activeVerb, target);
+    this.clearSelection(); this.refreshInteractiveTargets();
+  }
+  updateAccessibility() {
+    if (!this.accessibilityTargets) return;
+    const selected = this.activeVerb ? `${title(this.activeVerb)}${this.firstObject ? ` ${this.label(this.firstObject)}` : ""}` : "Walk to";
+    this.accessibilityStatus.textContent = `Selected action: ${selected}. Focused target: ${this.label(this.focusedTarget) || "none"}.`;
+    this.accessibilityTargets.replaceChildren(...this.interactiveTargets.map(({ id, kind }) => { const option = document.createElement("div"); option.id = `game-target-${id.replace(/[^a-z0-9_-]/gi, "-")}`; option.setAttribute("role", "option"); option.setAttribute("aria-selected", String(id === this.focusedTarget)); option.textContent = `${this.label(id)} (${kind})`; return option; }));
+    const ids = [...this.accessibilityTargets.children].map(({ id }) => id); this.canvas.setAttribute("aria-owns", ids.join(" "));
+    const active = this.accessibilityTargets.querySelector('[aria-selected="true"]'); if (active) this.canvas.setAttribute("aria-activedescendant", active.id); else this.canvas.removeAttribute("aria-activedescendant");
   }
   settings() {
     const wrapper = document.createElement("div"); wrapper.className = "mobile-settings"; wrapper.hidden = !this.coarsePointer;
@@ -123,7 +189,7 @@ class Runtime {
     // A spawn may deliberately overlap a destination trigger. Treat it as
     // occupied until the player leaves, rather than immediately bouncing back.
     this.occupiedTriggers = enteredTriggers(point, this.triggers).occupied;
-    this.dispatch("room.enter", [id]);
+    this.dispatch("room.enter", [id]); this.refreshInteractiveTargets();
   }
   eventPoint(event) { const rect = this.canvas.getBoundingClientRect(); return [(event.clientX - rect.left) * this.width / rect.width, (event.clientY - rect.top) * this.height / rect.height]; }
   hover(event) { const [x, y] = this.eventPoint(event); this.updateHover(x, y); }
@@ -140,7 +206,7 @@ class Runtime {
     const point = this.eventPoint(event); if (this.cursorMode === "direct") this.touchCursor = point;
     this.touch = { id: event.pointerId, start: point, last: point, moved: false, long: false, startedAt: performance.now() };
     const pointerId = event.pointerId;
-    this.touch.timer = setTimeout(() => { if (this.touch?.id !== pointerId || this.touch.moved) return; this.touch.long = true; this.pointer(event, 2, this.touchCursor); }, this.longTouchMilliseconds);
+    this.touch.timer = setTimeout(() => { if (this.touch?.id !== pointerId || this.touch.moved) return; this.touch.long = true; this.dispatchPhysicalTouch("long_press", event, this.touchCursor); }, this.longTouchMilliseconds);
   }
   pointerMove(event) {
     if (event.pointerType !== "touch") { if (event.target === this.canvas) this.hover(event); return; }
@@ -157,17 +223,21 @@ class Runtime {
     if (!this.touch.long && !this.touch.moved) {
       const button = performance.now() - this.touch.startedAt >= this.longTouchMilliseconds ? 2 : 0;
       this.touch.long = button === 2;
-      this.pointer(event, button, this.touchCursor);
+      this.dispatchPhysicalTouch(button === 2 ? "long_press" : "tap", event, this.touchCursor);
     }
     this.touch = null;
   }
   cancelTouch(event) { if (this.touch?.id === event.pointerId) { clearTimeout(this.touch.timer); this.touch = null; } }
+  dispatchPhysicalTouch(gesture, event, point) { event.preventDefault(); const action = this.input.touch.get(gesture); if (action) this.inputAction(action, { point, event }); }
   pointer(event, button = event.button, point = this.eventPoint(event)) {
     event.preventDefault();
+    const action = this.input.pointer.get(button); if (action) this.inputAction(action, { point, event });
+  }
+  secondaryAt(point) { this.clearSelection(); const [x, y] = point; this.perform("look", this.targetAt(x, y)); }
+  primaryAt(point) {
     if (!this.interactive) return;
-    if (button === 2) this.clearSelection();
     const [x, y] = point;
-    if (button === 0) {
+    {
       const inventory = this.inventoryLayout();
       if (inside(x, y, inventory.upRect) && inventory.page.up) { this.inventoryRow--; return; }
       if (inside(x, y, inventory.downRect) && inventory.page.down) { this.inventoryRow++; return; }
@@ -183,8 +253,6 @@ class Runtime {
     }
     if (selectedVerb) { this.stopWalking(); this.activeVerb = selectedVerb; this.firstObject = null; return; }
     const target = this.targetAt(x, y);
-    if (button === 2) { this.perform("look", target); return; }
-    if (button !== 0) return;
     if (interfacePoint(x, y, this.ui, this.width, this.height) && !target) return;
     if (!this.activeVerb && this.inventory.includes(target)) return;
     if (!this.activeVerb) {
@@ -257,6 +325,7 @@ class Runtime {
   animationDuration(action, facing) { const animation = this.animations[`animation.${action}_${facing || "down"}`]; if (!animation?.frames) return 1; return animation.frames.split(";").reduce((sum, frame) => sum + tuple(frame.trim(), 5, "animation frame")[4], 0); }
   frame(now) { if (now - this.last >= 1000 / integer(this.game.runtime.ticks_per_second, "tick rate")) { this.step(); this.last = now; } this.draw(); requestAnimationFrame((time) => this.frame(time)); }
   draw() {
+    this.refreshInteractiveTargets();
     const c = this.ctx, room = this.rooms[this.room], background = room?.room.background_color || "#000";
     c.fillStyle = background; c.fillRect(0, 0, this.width, this.height);
     c.save(); const [shakeX, shakeY] = shakeOffset(this.shakeTicks, integer(this.game.runtime.shake_amplitude || "2", "shake amplitude")); c.translate(shakeX, shakeY);
@@ -275,7 +344,16 @@ class Runtime {
     this.textRegion(this.ui.sentence_region, this.actionSentence || walking || hoverSentence || composing);
     for (const verb of list(this.ui.verb_panel.verbs)) { const spec = this.ui[`verb.${verb}`]; this.panel(spec.rect, spec.label, this.activeVerb === verb); }
     if (this.coarsePointer) this.cursor(this.touchCursor);
+    this.focusIndicator();
     c.restore();
+  }
+  focusIndicator() {
+    if (!this.focusedTarget) return;
+    let rect;
+    const inventoryIndex = this.inventory.indexOf(this.focusedTarget), layout = this.inventoryLayout();
+    if (inventoryIndex >= layout.page.start && inventoryIndex < layout.page.end) rect = [layout.origin[0] + (inventoryIndex - layout.page.start) * layout.itemWidth, layout.origin[1], layout.itemWidth, layout.itemHeight];
+    else if (this.entities[this.focusedTarget]) rect = this.bounds(this.entities[this.focusedTarget]);
+    if (!rect) return; const [x, y, w, h] = rect; this.ctx.save(); this.ctx.strokeStyle = this.ui.palette.active || "#fff"; this.ctx.lineWidth = 2; this.ctx.setLineDash([3, 2]); this.ctx.strokeRect(Math.round(x) - 2, Math.round(y) - 2, Math.round(w) + 4, Math.round(h) + 4); this.ctx.restore();
   }
   label(id) { return this.entities[id]?.label || this.inventoryEntities[id]?.label || id?.replaceAll("_", " ") || ""; }
   sprite(entity) {
