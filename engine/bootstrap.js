@@ -2,7 +2,7 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { loadBitmaps } from "./bitmaps.js";
-import { enteredTriggers, interpolatedScale, parseScalingStops, prepareItemUse, retainedRoomEntities, verbSentence } from "./interaction.js";
+import { bitmapWalkRegion, enteredTriggers, entityRenderOrder, interpolatedScale, parseScalingStops, prepareItemUse, retainedRoomEntities, verbSentence } from "./interaction.js";
 
 const root = document.querySelector("#engine-host");
 const entry = document.querySelector('meta[name="game-entry"]')?.content;
@@ -53,6 +53,8 @@ class Runtime {
   enter(id, spawn) {
     const room = this.rooms[id]; if (!room) throw new Error(`Unknown room ${id}`); this.room = id;
     this.playerScaling = parseScalingStops(room.room.player_scaling, `${id}.room.player_scaling`);
+    const mask = room.room.walk_mask;
+    this.walkable = mask ? bitmapWalkRegion(this.bitmaps[mask], this.width, this.height) : () => true;
     this.entities = retainedRoomEntities(this.roomEntities, id, () => {
       const entities = Object.create(null);
       for (const [section, values] of Object.entries(room)) if (section.startsWith("entity.")) entities[section.slice(7)] = { id: section.slice(7), ...values, position: tuple(values.position, 2, `${section}.position`) };
@@ -112,7 +114,7 @@ class Runtime {
   }
   targetAt(x, y) {
     const origin = tuple(this.ui.inventory_panel.origin, 2, "inventory"), itemWidth = integer(this.ui.inventory_panel.item_width, "item width"), itemHeight = integer(this.ui.inventory_panel.item_height, "item height");
-    return this.inventory.find((id, i) => id !== this.firstObject && inside(x, y, [origin[0] + i * itemWidth, origin[1], itemWidth, itemHeight])) || Object.values(this.entities).reverse().find((entity) => entity.id !== "player" && entity.id !== this.firstObject && entity.visible !== "false" && inside(x, y, this.bounds(entity)))?.id;
+    return this.inventory.find((id, i) => id !== this.firstObject && inside(x, y, [origin[0] + i * itemWidth, origin[1], itemWidth, itemHeight])) || entityRenderOrder(this.entities).reverse().find((entity) => entity.id !== "player" && entity.id !== this.firstObject && entity.visible !== "false" && inside(x, y, this.bounds(entity)))?.id;
   }
   perform(verb, target) { if (!target) return; this.interruptCommands(); this.actionSentence = this.verbSentence(verb, target); if (verb === "use") this.queue.push({ op: "animate", actor: "player", animation: "use" }); this.dispatch(`entity.${verb}`, [target]); }
   verbSentence(verb, first, second) { return verbSentence(this.ui, (id) => this.label(id), verb, first, second); }
@@ -125,7 +127,7 @@ class Runtime {
     const player = this.entities.player;
     if (player?.actionTicks > 0) { if (--player.actionTicks === 0) player.action = null; return; }
     const command = this.queue[0]; if (!command) { this.actionSentence = ""; return; }
-    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const speed = 2, dx = target[0] - actor.position[0], dy = target[1] - actor.position[1], distance = Math.hypot(dx, dy); actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); actor.moving = distance > speed; if (distance <= speed) { actor.position = [...target]; actor.moving = false; this.queue.shift(); } else actor.position = [actor.position[0] + dx / distance * speed, actor.position[1] + dy / distance * speed]; if (actor.id === "player") this.updateTriggers(actor.position); return; }
+    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const speed = 2, dx = target[0] - actor.position[0], dy = target[1] - actor.position[1], distance = Math.hypot(dx, dy); actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); actor.moving = distance > speed; const next = distance <= speed ? [...target] : [actor.position[0] + dx / distance * speed, actor.position[1] + dy / distance * speed]; if (actor.id === "player" && !this.walkable(next)) { actor.moving = false; this.queue.shift(); this.actionSentence = ""; return; } actor.position = next; if (distance <= speed) { actor.moving = false; this.queue.shift(); } if (actor.id === "player") this.updateTriggers(actor.position); return; }
     this.queue.shift();
     if (command.op === "enter") this.enter(command.room, command.spawn);
     else if (command.op === "say" || command.op === "narrate") { this.message = command.value; this.messageKind = command.op; this.messageTicks = textDuration(command.value, this.game.runtime); }
@@ -142,7 +144,7 @@ class Runtime {
   frame(now) { if (now - this.last >= 1000 / integer(this.game.runtime.ticks_per_second, "tick rate")) { this.step(); this.last = now; } this.draw(); requestAnimationFrame((time) => this.frame(time)); }
   draw() {
     const c = this.ctx, room = this.rooms[this.room]; c.fillStyle = room?.room.background_color || "#000"; c.fillRect(0, 0, this.width, this.height);
-    if (room) for (const entity of Object.values(this.entities)) if (entity.visible !== "false") this.sprite(entity);
+    if (room) for (const entity of entityRenderOrder(this.entities)) if (entity.visible !== "false") this.sprite(entity);
     const origin = tuple(this.ui.inventory_panel.origin, 2, "inventory"), itemWidth = integer(this.ui.inventory_panel.item_width, "item width");
     for (const [i, id] of this.inventory.entries()) this.sprite({ ...this.inventoryEntities[id], visible: "true", position: [origin[0] + i * itemWidth, origin[1]], origin: "0,0", size: `${itemWidth},${this.ui.inventory_panel.item_height}` });
     this.textRegion(this.ui.message_region, this.messageKind === "narrate" ? this.message : "");

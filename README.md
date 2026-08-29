@@ -52,6 +52,13 @@ demo's unlocked door uses this mechanism, can be opened and closed, and swaps
 graphics with its state. Walking to the open door crosses its trigger and enters
 the garden.
 
+Graphics may declare `transparent_color = #RRGGBB`; matching pixels become
+transparent after decoding. Room entities render back-to-front by their `depth`
+value, or by their y position when depth is omitted, so the player can walk
+behind foreground scenery. A room may also name a bitmap with `walk_mask`; only
+its opaque, non-black pixels permit player movement (the mask is scaled to the
+logical room size).
+
 Verb sentence prepositions are package data (`preposition = at` makes the
 **Look** action read “Look at …”, while `object_preposition = on` produces
 “Use key on door”). **Use** accepts a room or inventory object first, waits for

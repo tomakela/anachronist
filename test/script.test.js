@@ -4,8 +4,13 @@ import { readFile } from "node:fs/promises";
 import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
-import { loadBitmaps } from "../engine/bitmaps.js";
-import { enteredTriggers, interpolatedScale, parseScalingStops, prepareItemUse, retainedRoomEntities, verbSentence } from "../engine/interaction.js";
+import { loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
+import { bitmapWalkRegion, enteredTriggers, entityRenderOrder, interpolatedScale, parseScalingStops, prepareItemUse, retainedRoomEntities, verbSentence } from "../engine/interaction.js";
+
+const pixelCanvas = (width, height, values) => () => {
+  const image = { data: new Uint8ClampedArray(values) };
+  return { width, height, getContext: () => ({ drawImage() {}, getImageData: () => image, putImageData(next) { image.data = next.data; } }), image };
+};
 
 test("a handler is fully expanded into an ordered command chain", () => {
   const [handler] = compile(`module demo; on entity.use_item(item, target) {
@@ -69,6 +74,13 @@ test("explicit base64 resources load without requesting a binary PNG first", asy
   assert.equal(requested[0], "game/images/actor.png.base64");
   assert.equal(requested.some((path) => path === "game/images/actor.png"), false);
   assert.equal(result.actor, "bitmap");
+});
+
+test("a catalogue transparent color clears only exactly matching pixels", () => {
+  const factory = pixelCanvas(2, 1, [255, 0, 255, 255, 254, 0, 255, 255]);
+  const canvas = transparentBitmap({ width: 2, height: 1 }, "#ff00ff", factory);
+  assert.deepEqual([...canvas.image.data], [255, 0, 255, 0, 254, 0, 255, 255]);
+  assert.throws(() => transparentBitmap({ width: 1, height: 1 }, "magenta", factory), /expected #RRGGBB/);
 });
 
 test("the demo graphic catalogue requests images before using base64 fallbacks", async () => {
@@ -170,6 +182,24 @@ test("room perspective scaling interpolates and clamps between y stops", () => {
   assert.equal(interpolatedScale(120, stops), 1.05);
   assert.equal(interpolatedScale(160, stops), 1.2);
   assert.throws(() => parseScalingStops("100,1"), /at least two stops/);
+});
+
+test("entities use explicit depth or foot position for back-to-front ordering", () => {
+  const entities = {
+    player: { id: "player", position: [0, 80] }, foreground: { id: "foreground", position: [0, 100] },
+    backdrop: { id: "backdrop", position: [0, 150], depth: "10" }
+  };
+  assert.deepEqual(entityRenderOrder(entities).map(({ id }) => id), ["backdrop", "player", "foreground"]);
+});
+
+test("walk masks scale bitmap pixels and allow only visible non-black areas", () => {
+  const factory = pixelCanvas(2, 2, [255,255,255,255, 0,0,0,255, 1,2,3,255, 255,255,255,0]);
+  const allowed = bitmapWalkRegion({ width: 2, height: 2 }, 100, 100, factory);
+  assert.equal(allowed([10, 10]), true);
+  assert.equal(allowed([75, 10]), false);
+  assert.equal(allowed([10, 75]), true);
+  assert.equal(allowed([75, 75]), false);
+  assert.equal(allowed([100, 50]), false);
 });
 
 test("taking the wall clock creates the persistent fallen-clock scene", async () => {
