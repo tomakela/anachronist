@@ -39,7 +39,8 @@ class Runtime {
     this.width = integer(game.display.logical_width, "logical_width"); this.height = integer(game.display.logical_height, "logical_height");
     this.canvas = document.createElement("canvas"); this.canvas.width = this.width; this.canvas.height = this.height;
     const aspect = this.width / this.height;
-    this.canvas.style.aspectRatio = `${this.width} / ${this.height}`; this.canvas.style.setProperty("--game-width", `min(100vw, ${aspect * 100}vh)`); this.canvas.style.setProperty("--game-height", `min(100vh, ${100 / aspect}vw)`);
+    const safeWidth = "(100dvw - env(safe-area-inset-left) - env(safe-area-inset-right))", safeHeight = "(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom))";
+    this.canvas.style.aspectRatio = `${this.width} / ${this.height}`; this.canvas.style.setProperty("--game-width", `min(calc${safeWidth}, calc(${safeHeight} * ${aspect}))`); this.canvas.style.setProperty("--game-height", `min(calc${safeHeight}, calc(${safeWidth} / ${aspect}))`);
     this.canvas.setAttribute("aria-label", ui.interface.accessible_label); this.canvas.tabIndex = 0; this.ctx = this.canvas.getContext("2d"); this.ctx.imageSmoothingEnabled = false;
     this.coarsePointer = matchMedia("(pointer: coarse)").matches;
     this.cursorMode = localStorage.getItem("anachronist.cursor-mode") || "direct";
@@ -51,10 +52,10 @@ class Runtime {
   }
   start() {
     this.dispatch("game.start", []);
-    this.canvas.addEventListener("pointerdown", (event) => this.pointerDown(event));
-    this.canvas.addEventListener("pointermove", (event) => this.pointerMove(event));
-    this.canvas.addEventListener("pointerup", (event) => this.pointerUp(event));
-    this.canvas.addEventListener("pointercancel", (event) => this.cancelTouch(event));
+    root.addEventListener("pointerdown", (event) => this.pointerDown(event));
+    root.addEventListener("pointermove", (event) => this.pointerMove(event));
+    root.addEventListener("pointerup", (event) => this.pointerUp(event));
+    root.addEventListener("pointercancel", (event) => this.cancelTouch(event));
     this.canvas.addEventListener("pointerleave", () => { this.hoverTarget = null; });
     this.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     this.canvas.addEventListener("keydown", (event) => { if (event.key === "Escape") this.clearSelection(); });
@@ -70,8 +71,19 @@ class Runtime {
       radio.addEventListener("change", () => { this.cursorMode = value; localStorage.setItem("anachronist.cursor-mode", value); });
       row.append(radio, ` ${label}`); choices.append(row);
     }
+    const fullscreen = document.createElement("button"); fullscreen.type = "button"; fullscreen.className = "fullscreen-toggle"; fullscreen.textContent = "Enter full screen";
+    fullscreen.hidden = !document.fullscreenEnabled; fullscreen.addEventListener("click", () => this.toggleFullscreen());
+    document.addEventListener("fullscreenchange", () => { fullscreen.textContent = document.fullscreenElement ? "Exit full screen" : "Enter full screen"; });
+    choices.append(fullscreen);
     button.addEventListener("click", () => { choices.hidden = !choices.hidden; button.ariaExpanded = String(!choices.hidden); });
     wrapper.append(button, choices); return wrapper;
+  }
+  async toggleFullscreen() {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen(); screen.orientation?.unlock?.(); return;
+    }
+    await root.requestFullscreen({ navigationUI: "hide" });
+    await screen.orientation?.lock?.("landscape").catch(() => {});
   }
   scriptState() { return { game: this.globals }; }
   matchingHandler(event, args) { return this.handlers.find((candidate) => candidate.event === event && candidate.args.length === args.length && (!candidate.roomId || candidate.roomId === this.room || event === "room.enter") && (!candidate.localTarget || candidate.localTarget === args.at(-1))); }
@@ -104,26 +116,28 @@ class Runtime {
     this.hoverTarget = interfacePoint(x, y, this.ui, this.width, this.height) && !this.activeVerb ? null : target;
   }
   pointerDown(event) {
-    if (event.pointerType !== "touch") { this.pointer(event); return; }
+    if (event.target.closest?.(".mobile-settings")) return;
+    if (event.pointerType !== "touch") { if (event.target === this.canvas) this.pointer(event); return; }
+    if (this.cursorMode !== "drag" && event.target !== this.canvas) return;
     if (this.touch) return;
-    event.preventDefault(); this.canvas.setPointerCapture(event.pointerId);
+    event.preventDefault(); root.setPointerCapture(event.pointerId);
     const point = this.eventPoint(event); if (this.cursorMode === "direct") this.touchCursor = point;
-    this.touch = { id: event.pointerId, last: point, moved: false, long: false };
+    this.touch = { id: event.pointerId, start: point, last: point, moved: false, long: false };
     const pointerId = event.pointerId;
     this.touch.timer = setTimeout(() => { if (this.touch?.id !== pointerId || this.touch.moved) return; this.touch.long = true; this.pointer(event, 2, this.touchCursor); }, this.longTouchMilliseconds);
   }
   pointerMove(event) {
-    if (event.pointerType !== "touch") { this.hover(event); return; }
+    if (event.pointerType !== "touch") { if (event.target === this.canvas) this.hover(event); return; }
     if (!this.touch || this.touch.id !== event.pointerId) return;
     const point = this.eventPoint(event), delta = [point[0] - this.touch.last[0], point[1] - this.touch.last[1]];
-    if (Math.hypot(...delta) > 1) this.touch.moved = true;
+    if (Math.hypot(point[0] - this.touch.start[0], point[1] - this.touch.start[1]) > 3) this.touch.moved = true;
     if (this.cursorMode === "direct") this.touchCursor = point;
     else this.touchCursor = dragCursor(this.touchCursor, delta, this.draggingSensitivity, this.width, this.height);
     this.touch.last = point; this.updateHover(...this.touchCursor);
   }
   pointerUp(event) {
     if (event.pointerType !== "touch" || !this.touch || this.touch.id !== event.pointerId) return;
-    clearTimeout(this.touch.timer); if (!this.touch.long) this.pointer(event, 0, this.touchCursor); this.touch = null;
+    clearTimeout(this.touch.timer); if (!this.touch.long && !this.touch.moved) this.pointer(event, 0, this.touchCursor); this.touch = null;
   }
   cancelTouch(event) { if (this.touch?.id === event.pointerId) { clearTimeout(this.touch.timer); this.touch = null; } }
   pointer(event, button = event.button, point = this.eventPoint(event)) {
