@@ -366,6 +366,25 @@ test("a rejected item transaction narrates without walking or animating", () => 
   assert.deepEqual(runtime.queue, [{ op: "narrate", value: "No brass key with painted door." }]);
 });
 
+test("a touch tap dispatches its pointer action exactly once", () => {
+  const runtime = Object.create(Runtime.prototype), calls = [];
+  Object.assign(runtime, {
+    interactive: true,
+    input: { touch: new Map([["tap", "pointer_primary"]]) },
+    touchCursor: [10, 20],
+    touch: { id: 7, startedAt: performance.now(), moved: false, long: false },
+    longTouchMilliseconds: 550,
+    doubleTouchMilliseconds: 350,
+    doubleTouchMoveTolerance: 12,
+    lastTap: null,
+    pointer: (...args) => calls.push(args)
+  });
+  const event = { pointerType: "touch", pointerId: 7, preventDefault() {} };
+  runtime.pointerUp(event);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].slice(1), [0, [10, 20], null]);
+});
+
 test("entity and room fallback scripts override generic narration in order", () => {
   const game = compile(`on fallback.open(target) { narrate "game"\n }`);
   const room = compile(`on fallback.open(target) { narrate "room"\n }`, { roomId: "hall", entities: ["door"] });
