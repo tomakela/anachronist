@@ -2,7 +2,7 @@ import { parseIni, integer, tuple, list } from "./ini.js";
 import { compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
 import { loadBitmaps } from "./bitmaps.js";
-import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
+import { bitmapWalkRegion, dragCursor, enteredTriggers, entityIsInteractive, entityRenderOrder, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, touchMoved, verbSentence } from "./interaction.js";
 
 const root = document.querySelector("#engine-host");
 const entry = document.querySelector('meta[name="game-entry"]')?.content;
@@ -117,6 +117,7 @@ class Runtime {
     });
     for (const item of roomEntryItems(room)) if (!this.inventory.includes(item.id)) {
       this.inventory.push(item.id); this.inventoryEntities[item.id] = { ...item, visible: "false", position: [0, 0] };
+      this.scrollInventoryToEnd();
     }
     const point = tuple(room[`spawn.${spawn}`].position, 2, "spawn"), player = this.animations.player || {}; this.entities.player = { id: "player", position: point, graphic: player.graphic || "placeholder.actor", size: player.size || "16,32", origin: player.origin, label: "player", visible: room.room.player_visible === "false" ? "false" : "true", facing: "down", moving: false, action: null, actionTicks: 0 };
     this.triggers = Object.fromEntries(Object.entries(room).filter(([section]) => section.startsWith("trigger.")).map(([section, values]) => [section.slice(8), tuple(values.rect, 4, `${section}.rect`)]));
@@ -223,6 +224,11 @@ class Runtime {
     const columns = Math.max(1, Math.floor((this.width - origin[0] - arrowWidth) / itemWidth)), page = inventoryPage(this.inventory.length, this.inventoryRow, columns); this.inventoryRow = page.row;
     return { origin, itemWidth, itemHeight, page, upRect: [this.width - arrowWidth, origin[1], arrowWidth, itemHeight / 2], downRect: [this.width - arrowWidth, origin[1] + itemHeight / 2, arrowWidth, itemHeight / 2] };
   }
+  scrollInventoryToEnd() {
+    const spec = this.ui.inventory_panel, origin = tuple(spec.origin, 2, "inventory"), itemWidth = integer(spec.item_width, "item width"), arrowWidth = integer(spec.arrow_width || "16", "arrow width");
+    const columns = Math.max(1, Math.floor((this.width - origin[0] - arrowWidth) / itemWidth));
+    this.inventoryRow = inventoryLastRow(this.inventory.length, columns);
+  }
   perform(verb, target) { if (!target) return; this.interruptCommands(); this.actionSentence = this.verbSentence(verb, target); if (verb === "use") this.queue.push({ op: "animate", actor: "player", animation: "use" }); this.dispatch(`entity.${verb}`, [target]); }
   verbSentence(verb, first, second) { return verbSentence(this.ui, (id) => this.label(id), verb, first, second); }
   dismissMessage() { this.message = ""; this.messageTicks = 0; this.messageKind = ""; if (!this.queue.length) this.actionSentence = ""; }
@@ -240,7 +246,7 @@ class Runtime {
     if (command.op === "enter") this.enter(command.room, command.spawn);
     else if (command.op === "say" || command.op === "narrate") { this.message = command.value; this.messageKind = command.op; this.messageTicks = textDuration(command.value, this.game.runtime); }
     else if (command.op === "animate") { const actor = this.entities[command.actor]; if (actor) { actor.moving = false; actor.action = command.animation; actor.actionTicks = this.animationDuration(command.animation, actor.facing); } }
-    else if (command.op === "take") { const entity = this.entities[command.target]; if (entity && !this.inventory.includes(command.target)) { if (!command.animated) { this.queue.unshift({ ...command, animated: true }); this.queue.unshift({ op: "animate", actor: "player", animation: "pickup" }); return; } entity.visible = "false"; this.inventoryEntities[command.target] = { ...this.items[command.target], ...entity }; this.inventory.push(command.target); } }
+    else if (command.op === "take") { const entity = this.entities[command.target]; if (entity && !this.inventory.includes(command.target)) { if (!command.animated) { this.queue.unshift({ ...command, animated: true }); this.queue.unshift({ op: "animate", actor: "player", animation: "pickup" }); return; } entity.visible = "false"; this.inventoryEntities[command.target] = { ...this.items[command.target], ...entity }; this.inventory.push(command.target); this.scrollInventoryToEnd(); } }
     else if (command.op === "hide" || command.op === "show") this.entities[command.target].visible = command.op === "show" ? "true" : "false";
     else if (command.op === "set") { const [id, field] = command.target.split("."); if (id === "game") this.globals[field] = command.value; else if (this.roomState[id]) this.roomState[id][field] = command.value; else this.entities[id][field] = String(command.value); }
     else if (command.op === "wait") this.queue.unshift(...Array(command.ticks).fill({ op: "pause" }));

@@ -87,6 +87,11 @@ export function inventoryPage(itemCount, row, columns) {
   return { row: current, start: current * columns, end: Math.min(itemCount, (current + 1) * columns), up: current > 0, down: current < rows - 1 };
 }
 
+/** Return the row containing the newest inventory item. */
+export function inventoryLastRow(itemCount, columns) {
+  return Math.max(0, Math.ceil(itemCount / columns) - 1);
+}
+
 /** Move a virtual cursor by a touch delta, amplified by configured sensitivity. */
 export function dragCursor(point, delta, sensitivity, width, height) {
   const amount = Number(sensitivity);
@@ -147,10 +152,21 @@ export function interpolatedScale(y, stops) {
   return stops.at(-1)[1];
 }
 
-/** Sort scenery and actors back-to-front using explicit, stable z layers. */
+/**
+ * Sort scenery and actors back-to-front using explicit, stable z layers.
+ * An entity with `z_clip` swaps sides of the player at that player-y: above
+ * the line the entity is painted first; below it the player is painted first.
+ */
 export function entityRenderOrder(entities) {
+  const player = Object.values(entities).find(({ id }) => id === "player");
+  const playerZ = player?.z === undefined ? 100 : Number(player.z);
   return Object.values(entities).sort((a, b) => {
-    const z = (entity) => entity.z === undefined ? (entity.id === "player" ? 100 : 0) : Number(entity.z);
+    const z = (entity) => {
+      if (entity.id !== "player" && entity.z_clip !== undefined && player) {
+        return playerZ + (player.position[1] < Number(entity.z_clip) ? -0.5 : 0.5);
+      }
+      return entity.z === undefined ? (entity.id === "player" ? 100 : 0) : Number(entity.z);
+    };
     return z(a) - z(b) || a.id.localeCompare(b.id);
   });
 }
