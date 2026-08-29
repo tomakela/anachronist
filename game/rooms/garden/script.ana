@@ -3,6 +3,10 @@ on gate.walk() {
     enter room hall at garden
 }
 
+on gate.look() {
+    say "It leads back into the hall."
+}
+
 on fountain.look() {
     say "That looks interesting."
     say "There may be more to discover here."

@@ -88,6 +88,28 @@ test("inventory item scripts lower unqualified handlers to their item", () => {
   assert.deepEqual(instantiate(handler, ["coin"]), []);
 });
 
+test("every demo object responds to the look action used by long touch", async () => {
+  const main = compile(await readFile(new URL("../game/main.ana", import.meta.url), "utf8"));
+  const roomSpecs = [
+    ["hall", ["door", "clock", "fallen_clock", "key", "bush", "stick"]],
+    ["garden", ["gate", "fountain"]]
+  ];
+  const handlers = [...main];
+  for (const [room, entities] of roomSpecs) {
+    handlers.push(...compile(await readFile(new URL(`../game/rooms/${room}/script.ana`, import.meta.url), "utf8"), { roomId: room, entities }));
+  }
+  const itemIndex = parseIni(await readFile(new URL("../game/items/index.ini", import.meta.url), "utf8"));
+  for (const item of itemIndex.catalogue.items.split(",").map((value) => value.trim())) {
+    const script = itemIndex[`item.${item}`].script;
+    handlers.push(...compile(await readFile(new URL(`../game/items/${script}`, import.meta.url), "utf8"), { itemId: item }));
+  }
+
+  const lookTargets = ["door", "clock", "fallen_clock", "key", "bush", "stick", "gate", "fountain", "coffee_cup", "coin", "notebook", "pencil", "handkerchief"];
+  for (const target of lookTargets) {
+    assert.ok(handlers.some((handler) => handler.event === "entity.look" && handler.localTarget === target), `${target} is missing a look handler`);
+  }
+});
+
 test("package paths remain relative to the site root", () => {
   assert.equal(resolvePackagePath("game/", "interface.ini"), "game/interface.ini");
   assert.equal(resolvePackagePath("game/", "rooms/index.ini"), "game/rooms/index.ini");
