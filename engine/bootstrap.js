@@ -54,7 +54,7 @@ class Runtime {
     this.canvas.style.aspectRatio = `${this.width} / ${this.height}`; this.canvas.style.setProperty("--game-width", `min(calc${safeWidth}, calc(${safeHeight} * ${aspect}))`); this.canvas.style.setProperty("--game-height", `min(calc${safeHeight}, calc(${safeWidth} / ${aspect}))`);
     this.canvas.setAttribute("aria-label", ui.interface.accessible_label); this.canvas.tabIndex = 0; this.ctx = this.canvas.getContext("2d"); this.ctx.imageSmoothingEnabled = false;
     this.coarsePointer = matchMedia("(pointer: coarse)").matches;
-    this.cursorMode = localStorage.getItem("anachronist.cursor-mode") || "direct";
+    this.cursorMode = localStorage.getItem("anachronist.cursor-mode") || "drag";
     this.draggingSensitivity = Number(game.input.dragging_sensitivity);
     if (!Number.isFinite(this.draggingSensitivity) || this.draggingSensitivity <= 0) throw new Error("dragging_sensitivity must be a positive number");
     this.longTouchMilliseconds = integer(game.input.long_touch_milliseconds, "long touch milliseconds");

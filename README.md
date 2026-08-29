@@ -50,8 +50,8 @@ cannot reappear at its old room position when the player returns. The demo also
 records key acquisition in the persistent `game.key_taken` global for its game
 logic.
 
-On touch-oriented devices, a small settings button in the top-right switches
-between direct pointing and a relative drag cursor. Relative movement is
+On touch-oriented devices, a relative drag cursor is enabled by default. A small
+settings button in the top-right switches between it and direct pointing. Relative movement is
 amplified by the package's `input.dragging_sensitivity` value, making precise
 pointing possible without covering the target. A long touch performs the same
 **Look** action as a desktop right-click. Small finger movements within the
