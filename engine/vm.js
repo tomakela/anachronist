@@ -26,6 +26,9 @@ export function prepareItemUse(commands, world, protocol) {
     } else if (command.op === "remove") {
       if (!inventory.has(command.target)) return null;
       inventory.delete(command.target); prepared.push(command);
+    } else if (command.op === "replace") {
+      if (!inventory.has(command.target) || inventory.has(command.replacement) || !world.items?.[command.replacement]) return null;
+      inventory.delete(command.target); inventory.add(command.replacement); prepared.push(command);
     } else if (["show", "hide"].includes(command.op)) {
       if (!visible.has(command.target)) return null; visible.set(command.target, command.op === "show"); prepared.push(command);
     } else if (command.op === "set") {
@@ -131,7 +134,7 @@ export class DeterministicVM {
       return;
     }
     if (selectedVerb) { this.stopWalking(); this.activeVerb = selectedVerb; this.firstObject = null; return; }
-    const target = this.targetAt(x, y);
+    const target = this.targetAt(x, y, button !== 2);
     if (interfacePoint(x, y, this.ui, this.width, this.height) && !target) return;
     if (button === 2) {
       if (target) {
@@ -181,6 +184,7 @@ export class DeterministicVM {
     else if (command.op === "animate") { const actor = this.entities[command.actor]; if (actor) { actor.moving = false; actor.action = command.animation; actor.actionTicks = command.skipPresentation ? 0 : (command.fast ? 1 : this.animationDuration(command.animation, actor.facing)); } }
     else if (command.op === "take") { const entity = this.entities[command.target]; if (entity && !this.inventory.includes(command.target)) { if (!command.animated) { this.queue.unshift({ ...command, animated: true }); this.queue.unshift({ op: "animate", actor: this.protocolValue("player_actor"), animation: this.protocolValue("pickup_animation") }); return; } entity.visible = "false"; this.inventoryEntities[command.target] = { ...this.items[command.target], ...entity }; this.inventory.push(command.target); this.scrollInventoryToEnd(); } }
     else if (command.op === "remove") { const index = this.inventory.indexOf(command.target); if (index >= 0) { this.inventory.splice(index, 1); delete this.inventoryEntities[command.target]; this.inventoryLayout(); } }
+    else if (command.op === "replace") { const index = this.inventory.indexOf(command.target); if (index >= 0 && this.items[command.replacement] && !this.inventory.includes(command.replacement)) { this.inventory[index] = command.replacement; this.inventoryEntities[command.replacement] = { ...this.inventoryEntities[command.target], ...this.items[command.replacement] }; delete this.inventoryEntities[command.target]; } }
     else if (command.op === "hide" || command.op === "show") this.entities[command.target].visible = command.op === "show" ? "true" : "false";
     else if (command.op === "set") { const [id, field] = command.target.split("."); if (id === "game") this.globals[field] = command.value; else if (this.roomState[id]) this.roomState[id][field] = command.value; else this.entities[id][field] = String(command.value); }
     else if (command.op === "wait") { if (!command.skipPresentation) this.queue.unshift(...Array(command.fast ? 1 : command.ticks).fill({ op: "pause", skippable: command.skippable })); }

@@ -86,14 +86,20 @@ on lamp.use_item(item) {
 }
 
 on fountain.use_item(item) {
-    if item == coin {
+    if item == coffee_cup {
+        walk player to fountain
+        replace coffee_cup with water in inventory
+        say "I empty the cold coffee and fill the cup with fountain water."
+    } else {
+      if item == coin {
         walk player to fountain
         remove coin from inventory
         set fountain.graphic = placeholder.fountain_splash
         set game.coin_thrown = true
         shake 8 ticks
         say "I toss the coin and make a wish."
-    } else {
-        say "That would not improve the fountain."
+      } else {
+          say "That would not improve the fountain."
+      }
     }
 }

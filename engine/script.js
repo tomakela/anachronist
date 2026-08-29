@@ -49,6 +49,7 @@ export function compile(source, compileContext = {}) {
     else if (op === "say" || op === "narrate") node = { op, value: expression() };
     else if (["take", "show", "hide", "enable", "disable"].includes(op)) node = { op, target: take().value };
     else if (op === "remove") { node = { op, target: take().value }; take("from"); take("inventory"); }
+    else if (op === "replace") { node = { op, target: take().value }; take("with"); node.replacement = take().value; take("in"); take("inventory"); }
     else if (op === "enter") { take("room"); const room = take().value; take("at"); node = { op, room, spawn: take().value }; }
     else if (op === "set") { const target = take().value; take("="); node = { op, target, value: expression() }; }
     else if (op === "wait" || op === "await" || op === "shake") { const ticks = take().value; take("ticks"); node = { op: op === "await" ? "await" : op, ticks }; }
@@ -126,7 +127,7 @@ export function instantiate(handler, supplied, state = Object.create(null)) {
       const task = handler.tasks?.[node.task]; if (!task) throw new Error(`script: unknown task ${node.task}`);
       command.definition = task; command.args = node.args.map((arg) => evaluate(arg, scope)); command.ownerRoom = handler.roomId;
     }
-    for (const key of ["actor", "target", "room", "spawn"]) if (command[key] in context) command[key] = context[command[key]];
+    for (const key of ["actor", "target", "replacement", "room", "spawn"]) if (command[key] in context) command[key] = context[command[key]];
     commands.push({ ...command, ...(handler.skippable ? { skippable: true } : {}) });
   });
   expand(handler.body); return commands;

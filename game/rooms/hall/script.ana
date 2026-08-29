@@ -140,12 +140,12 @@ on bush.look() {
 }
 
 on bush.use_item(item) {
-    if item == coffee_cup {
+    if item == water {
         walk player to bush
-        remove coffee_cup from inventory
+        remove water from inventory
         take stick
         set game.stick_found = true
-        say "I pour the last of the coffee onto the roots. A stick washes free."
+        say "I pour the water onto the roots. A stick washes free."
     } else {
         say "That will not coax anything out of the bush."
     }
