@@ -5,7 +5,7 @@ import { compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
-import { bitmapWalkRegion, enteredTriggers, entityRenderOrder, interpolatedScale, parseScalingStops, prepareItemUse, retainedRoomEntities, shakeOffset, verbSentence } from "../engine/interaction.js";
+import { bitmapWalkRegion, enteredTriggers, entityRenderOrder, interpolatedScale, inventoryPage, parseScalingStops, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, verbSentence } from "../engine/interaction.js";
 
 const pixelCanvas = (width, height, values) => () => {
   const image = { data: new Uint8ClampedArray(values) };
@@ -179,6 +179,18 @@ test("room entity mutations survive leaving and returning", () => {
   const returned = retainedRoomEntities(states, "hall", () => ({ clock: { visible: "true" } }));
   assert.equal(returned, hall);
   assert.equal(returned.clock.visible, "false");
+});
+
+test("rooms can grant inventory items on entry", () => {
+  assert.deepEqual(roomEntryItems({ room: {}, "inventory.coffee": { label: "coffee cup", graphic: "cup" } }), [
+    { id: "coffee", label: "coffee cup", graphic: "cup" }
+  ]);
+});
+
+test("inventory rows clamp and enable only useful arrows", () => {
+  assert.deepEqual(inventoryPage(4, 0, 4), { row: 0, start: 0, end: 4, up: false, down: false });
+  assert.deepEqual(inventoryPage(5, 0, 4), { row: 0, start: 0, end: 4, up: false, down: true });
+  assert.deepEqual(inventoryPage(5, 1, 4), { row: 1, start: 4, end: 5, up: true, down: false });
 });
 
 test("room perspective scaling interpolates and clamps between y stops", () => {

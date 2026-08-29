@@ -6,13 +6,24 @@ on game.start() {
     set game.door_unlocked = false;
     set game.clock_fallen = false;
     set game.fallen_clock_taken = false;
+    set game.stick_found = false;
     enter room hall at entry;
     narrate "Find a way into the garden.";
 }
 
 on entity.look(target) {
-    say "That looks interesting.";
-    say "There may be more to discover here.";
+    if (target == bush) {
+        if (game.stick_found == false) {
+            take stick;
+            set game.stick_found = true;
+            say "Found a stick";
+        } else {
+            say "There is nothing else in the bush.";
+        }
+    } else {
+        say "That looks interesting.";
+        say "There may be more to discover here.";
+    }
 }
 
 on entity.walk(target) {
