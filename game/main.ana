@@ -1,10 +1,3 @@
 on game.start() {
-    set game.key_taken = false
-    set game.door_open = false
-    set game.door_unlocked = false
-    set game.clock_fallen = false
-    set game.fallen_clock_taken = false
-    set game.stick_found = false
-    enter room hall at entry
-    narrate "Find a way into the garden."
+    enter room title at entry
 }

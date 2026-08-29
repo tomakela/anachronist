@@ -19,7 +19,28 @@ newline (or a closing brace) terminates a simple statement; blank lines and
 comments do not. Semicolons are invalid, and two simple statements cannot share
 a line. Newlines inside parenthesized delimiter lists are only formatting.
 
-## 2. Package and room scripts
+## 2. Variables and owned scripts
+
+Persistent variables are declarations at the beginning of an INI file, before
+its first section. Values may be booleans, integers, quoted strings, or bare INI
+values:
+
+```ini
+door_unlocked = false
+player_name = "Ada"
+
+[package]
+id = example
+```
+
+Variables in `game.ini` are available everywhere as `game.door_unlocked` and
+`game.player_name`. Variables at the beginning of a room's `room.ini` use the
+room catalogue ID as their namespace, such as `hall.visited`. Every room's
+variables are created and initialized while the game package starts, not when
+the player first enters that room. `set` changes either kind of variable. The
+prefixes make ownership clear by convention; they are not visibility barriers.
+
+The package entry and each room have a script:
 
 ```ana
 on game.start() {
@@ -34,16 +55,25 @@ implicit room context: `on enter()` lowers to guarded `room.enter`, and
 rejects unknown or ambiguous local entity names. Parentheses around `if`
 conditions are optional.
 
-State must be explicitly scoped as `game`, `room`, or `entity`. Ordinary local
+State must be explicitly scoped as `game`, a room ID, or `entity`. Ordinary local
 variables use `let` and disappear when their call finishes unless captured by a
 serializable suspended coroutine.
 
-The version 1 interpreter resolves qualified `game.field` expressions against
-persistent VM globals and applies `set game.field` commands outside room-local
-state. Scripts use these fields for facts that must survive room
-reconstruction. Taking an entity deliberately does not modify its room file:
-the demo sets `game.key_taken` when acquiring the key, then tests that global
-and hides the original room entity when the player returns to the hall.
+The version 1 interpreter resolves qualified variable expressions against the
+persistent VM state. Taking an entity deliberately does not modify its room
+file: the demo sets `game.key_taken` when acquiring the key, then tests that
+global and hides the original room entity when the player returns to the hall.
+
+Inventory items may independently own scripts through the item catalogue. An
+item script is not tied to a room and its short handlers implicitly target that
+item. For example, `on look()` in `coffee_cup.ana` handles looking at the coffee
+cup in whichever room currently contains the player.
+
+Rooms can also be cut scenes. `interactive = false` disables pointing and
+verbs, `interface_visible = false` hides the verb and inventory interface, and
+`fullscreen = true` lets room artwork occupy the whole logical display. Cut
+scene scripts use the same deterministic commands, including `wait N ticks`,
+and normally enter another room when their sequence finishes.
 
 ## 3. Types and expressions
 

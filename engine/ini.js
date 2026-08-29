@@ -1,5 +1,6 @@
 export function parseIni(source, url = "<ini>") {
   const result = Object.create(null);
+  Object.defineProperty(result, "$variables", { value: Object.create(null), enumerable: false });
   let section = null;
   source.split(/\r?\n/).forEach((raw, index) => {
     const line = raw.trim();
@@ -12,12 +13,22 @@ export function parseIni(source, url = "<ini>") {
       return;
     }
     const pair = /^([^=]+?)\s*=\s*(.*)$/.exec(line);
-    if (!pair || !section) throw new Error(`${url}:${index + 1}: invalid INI entry`);
+    if (!pair) throw new Error(`${url}:${index + 1}: invalid INI entry`);
     const key = pair[1].trim();
-    if (key in result[section]) throw new Error(`${url}:${index + 1}: duplicate key ${key}`);
-    result[section][key] = pair[2].trim();
+    const destination = section ? result[section] : result.$variables;
+    if (key in destination) throw new Error(`${url}:${index + 1}: duplicate key ${key}`);
+    destination[key] = section ? pair[2].trim() : iniValue(pair[2].trim(), url, index + 1);
   });
   return result;
+}
+
+function iniValue(value, url, line) {
+  if (value === "true" || value === "false") return value === "true";
+  if (/^-?\d+$/.test(value)) return Number(value);
+  if (value.startsWith('"')) {
+    try { return JSON.parse(value); } catch { throw new Error(`${url}:${line}: invalid quoted variable`); }
+  }
+  return value;
 }
 
 export const integer = (value, label) => {
