@@ -33,7 +33,7 @@ export function compile(source, compileContext = {}) {
   const expression = () => { let left = atom(); if (["==", "!=", "<", ">", "<=", ">="].includes(t[p]?.value)) left = { kind: "binary", op: take().value, left, right: atom() }; return left; };
   const statement = () => {
     const op = take().value;
-    if (op === "sequence") { const node = { op, body: block() }; end(); return node; }
+    if (op === "sequence" || op === "loop") { const node = { op, body: block() }; end(); return node; }
     if (op === "if") {
       const parenthesized = peek("("); if (parenthesized) take();
       const test = expression(); if (parenthesized) take(")");
@@ -47,15 +47,28 @@ export function compile(source, compileContext = {}) {
     else if (["take", "show", "hide", "enable", "disable"].includes(op)) node = { op, target: take().value };
     else if (op === "enter") { take("room"); const room = take().value; take("at"); node = { op, room, spawn: take().value }; }
     else if (op === "set") { const target = take().value; take("="); node = { op, target, value: expression() }; }
-    else if (op === "wait" || op === "shake") { const ticks = take().value; take("ticks"); node = { op, ticks }; }
+    else if (op === "wait" || op === "await" || op === "shake") { const ticks = take().value; take("ticks"); node = { op: op === "await" ? "await" : op, ticks }; }
+    else if (op === "spawn") {
+      const task = take().value; take("("); const args = [];
+      while (!peek(")")) { args.push(expression()); if (!peek(")")) take(","); }
+      take(")"); node = { op, task, args };
+    }
     else if (op === "face") node = { op, actor: take().value, direction: take().value };
     else throw new Error(`script: unsupported statement ${op}`);
     end(); return node;
   };
   newlines();
   if (peek("module")) throw new Error("script: module declarations are not supported");
-  const handlers = [];
+  const handlers = [], tasks = Object.create(null);
   while (p < t.length) {
+    if (peek("task")) {
+      take(); const name = take().value; take("("); const args = [];
+      while (!peek(")")) { args.push(take().value); if (!peek(")")) take(","); }
+      take(")"); newlines();
+      if (tasks[name]) throw new Error(`script: duplicate task ${name}`);
+      tasks[name] = { name, args, body: block(), ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}) };
+      newlines(); continue;
+    }
     take("on"); const declaredEvent = take().value; take("("); const args = [];
     while (!peek(")")) { args.push(take().value); if (!peek(")")) take(","); }
     take(")"); newlines();
@@ -78,8 +91,10 @@ export function compile(source, compileContext = {}) {
       event = `entity.${action}`; localTarget = entity; args.push("target");
     }
     handlers.push({ event, args, body: block(), skippable, ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(compileContext.itemId ? { itemId: compileContext.itemId } : {}), ...(inventoryOnly ? { inventoryOnly: true } : {}), ...(localTarget ? { localTarget } : {}) });
+    handlers.push({ event, args, body: block(), skippable, tasks, ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(localTarget ? { localTarget } : {}) });
     newlines();
   }
+  for (const task of Object.values(tasks)) task.tasks = tasks;
   return handlers;
 }
 
@@ -100,8 +115,13 @@ export function instantiate(handler, supplied, state = Object.create(null)) {
   const commands = [];
   const expand = (body) => body.forEach((node) => {
     if (node.op === "sequence") return expand(node.body);
+    if (node.op === "loop") { const body = []; const previous = commands.splice(0); expand(node.body); body.push(...commands.splice(0)); commands.push(...previous, { op: "loop", body }); return; }
     if (node.op === "if") return expand(evaluate(node.test, scope) ? node.yes : node.no);
     const command = { ...node, value: node.value ? evaluate(node.value, scope) : undefined };
+    if (node.op === "spawn") {
+      const task = handler.tasks?.[node.task]; if (!task) throw new Error(`script: unknown task ${node.task}`);
+      command.definition = task; command.args = node.args.map((arg) => evaluate(arg, scope)); command.ownerRoom = handler.roomId;
+    }
     for (const key of ["actor", "target", "room", "spawn"]) if (command[key] in context) command[key] = context[command[key]];
     commands.push({ ...command, ...(handler.skippable ? { skippable: true } : {}) });
   });
@@ -113,4 +133,27 @@ export function textDuration(text, runtime) {
   const base = Number(runtime.text_base_ticks || 0), perCharacter = Number(runtime.text_ticks_per_character), minimum = Number(runtime.text_minimum_ticks || 1);
   for (const [name, value] of [["text_base_ticks", base], ["text_ticks_per_character", perCharacter], ["text_minimum_ticks", minimum]]) if (!Number.isInteger(value)) throw new Error(`${name}: expected integer`);
   return Math.max(minimum, base + String(text).length * perCharacter);
+}
+
+export class BackgroundTasks {
+  constructor(execute) { this.execute = execute; this.tasks = []; }
+  start(definition, supplied = [], ownerRoom = definition.roomId) {
+    const handler = { args: definition.args, body: definition.body, tasks: definition.tasks };
+    this.tasks.push({ queue: instantiate(handler, supplied), ownerRoom, waiting: 0 });
+  }
+  cancelRoom(room) { this.tasks = this.tasks.filter((task) => task.ownerRoom !== room); }
+  step() {
+    for (const task of [...this.tasks]) {
+      if (task.waiting > 0) { task.waiting--; continue; }
+      let command = task.queue.shift();
+      while (command?.op === "loop") {
+        task.queue.push(...command.body.map((item) => ({ ...item })), command);
+        command = task.queue.shift();
+      }
+      if (!command) { this.tasks.splice(this.tasks.indexOf(task), 1); continue; }
+      if (command.op === "await" || command.op === "wait") task.waiting = Math.max(0, Number(command.ticks));
+      else if (command.op === "spawn") this.start(command.definition, command.args, command.ownerRoom ?? task.ownerRoom);
+      else this.execute(command);
+    }
+  }
 }

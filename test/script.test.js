@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { compile, instantiate, textDuration } from "../engine/script.js";
+import { BackgroundTasks, compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { bitmapPixels, loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
 import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, parseScalingStops, pointInHotspot, prepareItemUse, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
 import { SaveStorage, snapshotRuntime, stableStringify, validateSnapshot } from "../engine/save.js";
+import { parseActionBindings, reconcileTargetFocus } from "../engine/input.js";
+import { Runtime } from "../engine/bootstrap.js";
 
 test("runtime saves deterministically round-trip durable world state", () => {
   const runtime = {
@@ -37,8 +39,6 @@ test("save storage uses a package-scoped key and reports corrupt JSON", () => {
   assert.equal(values.has("anachronist.save.demo"), true); assert.deepEqual(saves.read(), { good: true });
   values.set("anachronist.save.demo", "{"); assert.throws(() => saves.read(), /corrupt/);
 });
-import { parseActionBindings, reconcileTargetFocus } from "../engine/input.js";
-import { Runtime } from "../engine/bootstrap.js";
 
 const pixelCanvas = (width, height, values) => () => {
   const image = { data: new Uint8ClampedArray(values) };
@@ -559,4 +559,44 @@ test("cut-scene skipping retains persistent mutations and transitions in order",
     ["set", "game.key"], ["hide", "key"], ["enter", undefined], ["set", "game.puzzle"]
   ]);
   assert.equal(queue.at(-1).fast, undefined, "the following non-skippable puzzle boundary is untouched");
+});
+
+test("spawned tasks await independently and survive command interruption", () => {
+  const handlers = compile(`task fountain_cycle() {
+  loop {
+    await 2 ticks
+    set fountain.graphic = fountain_splash
+    await 1 ticks
+    set fountain.graphic = fountain
+  }
+}
+on room.enter() {
+  spawn fountain_cycle()
+}`);
+  const spawned = instantiate(handlers[0], [])[0];
+  assert.equal(spawned.op, "spawn");
+  const effects = [];
+  const scheduler = new BackgroundTasks((command) => effects.push([command.op, command.target, command.value]));
+  scheduler.start(spawned.definition, spawned.args, "garden");
+  scheduler.step(); scheduler.step(); scheduler.step();
+  assert.deepEqual(effects, []);
+  scheduler.step();
+  assert.deepEqual(effects, [["set", "fountain.graphic", "fountain_splash"]]);
+  scheduler.step(); scheduler.step(); scheduler.step();
+  assert.deepEqual(effects.at(-1), ["set", "fountain.graphic", "fountain"]);
+});
+
+test("room-owned background tasks are cancelled on room exit", () => {
+  const [handler] = compile(`task later() {
+  await 1 ticks
+  set fountain.visible = false
+}
+on enter() {
+  spawn later()
+}`, { roomId: "garden", entities: ["fountain"] });
+  const command = instantiate(handler, ["garden"])[0], effects = [];
+  const scheduler = new BackgroundTasks((effect) => effects.push(effect));
+  scheduler.start(command.definition, command.args, command.ownerRoom);
+  scheduler.cancelRoom("garden"); scheduler.step(); scheduler.step(); scheduler.step();
+  assert.deepEqual(effects, []);
 });

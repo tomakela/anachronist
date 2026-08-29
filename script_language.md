@@ -191,6 +191,30 @@ numeric literals in scripts while still allowing legitimate puzzle arithmetic.
 
 ## 7. Concurrency and waiting
 
+The JavaScript runtime supports deterministic background tasks with tick delays:
+
+```ana
+task fountain_cycle() {
+    loop {
+        await 180 ticks
+        set fountain.graphic = fountain_splash
+        await 12 ticks
+        set fountain.graphic = fountain
+    }
+}
+
+on enter() {
+    spawn fountain_cycle()
+}
+```
+
+`spawn` returns immediately, so player input and the foreground command queue keep
+running while the task waits. A task declared by a room script is owned by that
+room and is cancelled automatically when the player leaves it. Background tasks
+may currently use `await`, `loop`, `set`, `show`, `hide`, `face`, and nested
+`spawn`; presentation commands that require the foreground queue are rejected.
+
+
 `task` functions are deterministic coroutines. `await` may wait for another
 task, ticks, a declared timer, a typed event, movement, animation, audio, or a
 dialogue result. Concurrent tasks are started with `spawn`; ownership must be
