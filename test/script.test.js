@@ -346,6 +346,20 @@ test("item-use transactions can replace an inventory item in place", () => {
   assert.equal(runtime.inventoryEntities.coffee_cup, undefined);
 });
 
+test("using the cup of water on the bush reveals and collects the hidden stick", async () => {
+  const handlers = compile(await readFile(new URL("../game/rooms/hall/script.ana", import.meta.url), "utf8"), { roomId: "hall", entities: ["door", "clock", "fallen_clock", "key", "bush", "stick"] });
+  const handler = handlers.find((candidate) => candidate.event === "entity.use_item" && candidate.localTarget === "bush");
+  const commands = instantiate(handler, ["water", "bush"], { game: { stick_found: false } });
+  const world = { inventory: ["water"], items: { stick: {} }, entities: {
+    player: { visible: "true" }, bush: { visible: "true" }, stick: { visible: "false" }
+  }, rooms: {} };
+
+  assert.deepEqual(prepareItemUse(commands, world, ITEM_USE_PROTOCOL).map(({ op, target }) => [op, target]), [
+    ["walk", "bush"], ["animate", undefined], ["remove", "water"], ["show", "stick"],
+    ["take", "stick"], ["set", "game.stick_found"], ["say", undefined]
+  ]);
+});
+
 test("an invalid item-use tail rejects the entire transaction", () => {
   const commands = [{ op: "walk", actor: "player", target: "key" }, { op: "take", target: "key" }, { op: "walk", actor: "player", target: "missing" }];
   const world = { inventory: [], entities: { player: { visible: "true" }, key: { visible: "true" } }, rooms: {} };

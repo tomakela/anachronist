@@ -143,6 +143,7 @@ on bush.use_item(item) {
     if item == water {
         walk player to bush
         remove water from inventory
+        show stick
         take stick
         set game.stick_found = true
         say "I pour the water onto the roots. A stick washes free."
