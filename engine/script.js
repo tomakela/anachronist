@@ -59,16 +59,20 @@ export function compile(source, compileContext = {}) {
     take("on"); const declaredEvent = take().value; take("("); const args = [];
     while (!peek(")")) { args.push(take().value); if (!peek(")")) take(","); }
     take(")"); newlines();
+    const skippable = peek("skippable") ? (take(), newlines(), true) : false;
     let event = declaredEvent, localTarget;
-    if (compileContext.itemId && !declaredEvent.includes(".")) { event = `entity.${declaredEvent}`; localTarget = compileContext.itemId; args.push("target"); }
+    if (compileContext.itemId && declaredEvent.startsWith("fallback.")) { localTarget = compileContext.itemId; args.push("target"); }
+    else if (compileContext.itemId && !declaredEvent.includes(".")) { event = `entity.${declaredEvent}`; localTarget = compileContext.itemId; args.push("target"); }
     else if (compileContext.roomId && declaredEvent === "enter") { event = "room.enter"; args.push("room"); }
+    else if (compileContext.roomId && declaredEvent.startsWith("fallback.")) { /* package-style room fallback */ }
     else if (compileContext.roomId && declaredEvent.includes(".") && !["game", "room", "entity", "trigger"].includes(declaredEvent.split(".")[0])) {
       const [entity, action, extra] = declaredEvent.split(".");
       if (!action || extra) throw new Error(`script: invalid room event ${declaredEvent}`);
       if (compileContext.entities && !compileContext.entities.includes(entity)) throw new Error(`script: unknown local entity ${entity}`);
       event = `entity.${action}`; localTarget = entity; args.push("target");
     }
-    handlers.push({ event, args, body: block(), ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(localTarget ? { localTarget } : {}) });
+    handlers.push({ event, args, body: block(), skippable, ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(localTarget ? { localTarget } : {}) });
+    handlers.push({ event, args, body: block(), ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(compileContext.itemId ? { itemId: compileContext.itemId } : {}), ...(localTarget ? { localTarget } : {}) });
     newlines();
   }
   return handlers;
@@ -94,7 +98,7 @@ export function instantiate(handler, supplied, state = Object.create(null)) {
     if (node.op === "if") return expand(evaluate(node.test, scope) ? node.yes : node.no);
     const command = { ...node, value: node.value ? evaluate(node.value, scope) : undefined };
     for (const key of ["actor", "target", "room", "spawn"]) if (command[key] in context) command[key] = context[command[key]];
-    commands.push(command);
+    commands.push({ ...command, ...(handler.skippable ? { skippable: true } : {}) });
   });
   expand(handler.body); return commands;
 }

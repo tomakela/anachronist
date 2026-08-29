@@ -86,6 +86,16 @@ last row so the new item is visible. Items granted together when entering a room
 do not advance the inventory, so a starting inventory is shown from the first
 row.
 
+Entity pointing normally uses those sprite bounds. Authors can replace that
+fallback with an absolute room-space `hotspot_rect = x,y,width,height` or
+`hotspot_polygon = x,y; x,y; x,y` (three or more points). Set
+`alpha_hit_test = true` to ignore transparent pixels when using sprite bounds;
+the transparent-color-processed bitmap pixels are cached, and animated actors
+use their current frame. Higher `hotspot_priority` values deliberately win an
+overlap, with visual render order deciding equal priorities. For authoring, set
+`hotspot_overlay = true` in `[room]` (or `[runtime]`) to draw labeled cyan
+hotspot outlines.
+
 Verb sentence prepositions are package data (`preposition = at` makes the
 **Look** action read “Look at …”, while `object_preposition = on` produces
 “Use key on door”). **Use** accepts a room or inventory object first, waits for
