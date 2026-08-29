@@ -138,7 +138,7 @@ export class DeterministicVM {
     if (!this.activeVerb) {
       this.interruptCommands(); this.actionSentence = this.phrase("walk_to", { target: target ? this.label(target) : "" }).trim();
       if (!target) this.queue = [{ op: "walk", actor: this.protocolValue("player_actor"), point: [Math.round(x), Math.round(y)], manual: true, fast }];
-      else if (!this.dispatch("entity.walk", [target])) this.queue = [{ op: "walk", actor: this.protocolValue("player_actor"), target, manual: true }];
+      else if (!this.dispatch("entity.walk", [target])) this.queue = [{ op: "walk", actor: this.protocolValue("player_actor"), point: [Math.round(x), Math.round(y)], manual: true }];
       if (fast) this.accelerateCommands();
       return;
     }

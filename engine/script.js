@@ -42,7 +42,10 @@ export function compile(source, compileContext = {}) {
       end(); return { op, test, yes, no };
     }
     let node;
-    if (op === "walk") { const actor = take().value; take("to"); node = { op, actor, target: take().value }; }
+    if (op === "walk") {
+      const actor = take().value; take("to"); const destination = atom();
+      node = peek(",") ? (take(), { op, actor, point: [destination, atom()] }) : { op, actor, target: destination.value };
+    }
     else if (op === "say" || op === "narrate") node = { op, value: expression() };
     else if (["take", "show", "hide", "enable", "disable"].includes(op)) node = { op, target: take().value };
     else if (op === "enter") { take("room"); const room = take().value; take("at"); node = { op, room, spawn: take().value }; }
@@ -117,6 +120,7 @@ export function instantiate(handler, supplied, state = Object.create(null)) {
     if (node.op === "loop") { const body = []; const previous = commands.splice(0); expand(node.body); body.push(...commands.splice(0)); commands.push(...previous, { op: "loop", body }); return; }
     if (node.op === "if") return expand(evaluate(node.test, scope) ? node.yes : node.no);
     const command = { ...node, value: node.value ? evaluate(node.value, scope) : undefined };
+    if (node.point) command.point = node.point.map((coordinate) => evaluate(coordinate, scope));
     if (node.op === "spawn") {
       const task = handler.tasks?.[node.task]; if (!task) throw new Error(`script: unknown task ${node.task}`);
       command.definition = task; command.args = node.args.map((arg) => evaluate(arg, scope)); command.ownerRoom = handler.roomId;

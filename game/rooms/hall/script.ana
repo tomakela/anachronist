@@ -114,6 +114,7 @@ on door.close() {
 
 on bush.look() {
     if game.stick_found == false {
+        walk player to bush
         take stick
         set game.stick_found = true
         say "Found a stick"
