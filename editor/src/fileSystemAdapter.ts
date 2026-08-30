@@ -2,8 +2,15 @@ import type { ProjectAdapter, ProjectEntry } from "./types";
 
 type DirectoryHandle = FileSystemDirectoryHandle;
 
+function projectPath(path: string) {
+  const normalized = path.replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");
+  const parts = normalized.split("/");
+  if (!normalized || parts.some(part => !part || part === "." || part === "..")) throw new Error(`Invalid project file path: ${path || "(empty)"}`);
+  return parts;
+}
+
 async function fileHandle(root: DirectoryHandle, path: string, create = false) {
-  const parts = path.split("/").filter(Boolean);
+  const parts = projectPath(path);
   let directory = root;
   for (const part of parts.slice(0, -1)) directory = await directory.getDirectoryHandle(part, { create });
   return directory.getFileHandle(parts.at(-1)!, { create });
@@ -17,7 +24,7 @@ export class FileSystemProjectAdapter implements ProjectAdapter {
   static async open() {
     const picker = (window as typeof window & { showDirectoryPicker?: () => Promise<DirectoryHandle> }).showDirectoryPicker;
     if (!picker) throw new Error("Directory access is unavailable in this browser.");
-    return new FileSystemProjectAdapter(await picker());
+    return new FileSystemProjectAdapter(await picker.call(window));
   }
 
   async listFiles() {
@@ -45,8 +52,10 @@ export class UploadProjectAdapter implements ProjectAdapter {
   readonly name: string;
   private files = new Map<string, File>();
   constructor(files: FileList) {
-    for (const file of files) this.files.set(file.webkitRelativePath || file.name, file);
-    this.name = [...this.files.keys()][0]?.split("/")[0] || "Uploaded project";
+    const uploaded = [...files].map(file => ({ file, parts: projectPath(file.webkitRelativePath || file.name) }));
+    const wrapper = uploaded.length && uploaded.every(({ parts }) => parts.length > 1 && parts[0] === uploaded[0].parts[0]) ? uploaded[0].parts[0] : undefined;
+    for (const { file, parts } of uploaded) this.files.set(parts.slice(wrapper ? 1 : 0).join("/"), file);
+    this.name = wrapper || "Uploaded project";
   }
   async listFiles() { return [...this.files.keys()].map(path => ({ path, name: path.split("/").at(-1)!, kind: "file" as const })); }
   async readText(path: string) { const file = this.files.get(path); if (!file) throw new Error(`File not found: ${path}`); return { content: await file.text(), lastModified: file.lastModified }; }
