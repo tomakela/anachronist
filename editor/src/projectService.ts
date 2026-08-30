@@ -4,7 +4,6 @@ import type { CompletionIndex } from "./editorLanguage";
 
 export class EditorProjectService extends EventTarget {
   private adapter?: ProjectAdapter;
-  private packagePrefix = "";
   private documents = new Map<string, EditorDocument>();
   entries: ProjectEntry[] = [];
   contentRevision = 0;
@@ -19,18 +18,16 @@ export class EditorProjectService extends EventTarget {
     const gameFiles = allEntries.filter(entry => entry.kind === "file" && /(^|\/)game\.ini$/.test(entry.path));
     const packageEntry = gameFiles.find(entry => entry.path === "game.ini")
       || (gameFiles.length === 1 ? gameFiles[0] : undefined);
-    const prefix = packageEntry?.path.slice(0, -"game.ini".length) || "";
-    this.adapter?.close?.(); this.adapter = adapter; this.packagePrefix = prefix; this.documents.clear();
+    const packageRoot = packageEntry?.path.slice(0, -"game.ini".length) || "";
+    this.adapter?.close?.(); this.adapter = adapter; this.documents.clear();
     this.entries = allEntries
-      .filter(entry => !prefix || entry.path.startsWith(prefix))
-      .map(entry => ({ ...entry, path: entry.path.slice(prefix.length) }))
-      .filter(entry => entry.path);
+      .filter(entry => !packageRoot || entry.path.startsWith(packageRoot));
     this.changed(true); return true;
   }
   async readFile(path: string) {
     const existing = this.documents.get(path); if (existing) return existing;
     if (!this.adapter) throw new Error("Open a package first.");
-    const { content, lastModified } = await this.adapter.readText(this.adapterPath(path));
+    const { content, lastModified } = await this.adapter.readText(path);
     const document: EditorDocument = { id: path, path, name: path.split("/").at(-1)!, kind: documentKind(path), content, savedContent: content, dirty: false, externallyModified: false, lastModified };
     this.documents.set(path, document); this.changed(); return document;
   }
@@ -38,20 +35,20 @@ export class EditorProjectService extends EventTarget {
     const open = this.documents.get(path);
     if (open) return open.content;
     if (!this.adapter) throw new Error("Open a package first.");
-    return (await this.adapter.readText(this.adapterPath(path))).content;
+    return (await this.adapter.readText(path)).content;
   }
   async readProjectBlob(path: string) {
     const open = this.documents.get(path);
     if (open) return new Blob([open.content]);
     if (!this.adapter) throw new Error("Open a package first.");
-    if (this.adapter.readBlob) return this.adapter.readBlob(this.adapterPath(path));
-    return new Blob([(await this.adapter.readText(this.adapterPath(path))).content]);
+    if (this.adapter.readBlob) return this.adapter.readBlob(path);
+    return new Blob([(await this.adapter.readText(path)).content]);
   }
   async languageContext(path: string): Promise<{ compileContext: Record<string, unknown>; index: CompletionIndex }> {
     if (!this.adapter) return { compileContext: { path }, index: { rooms: [], entities: [], spawns: [], items: [], graphics: [], animations: [], verbs: [], protocol: [], states: [] } };
     const iniPaths = this.entries.filter(entry => entry.kind === "file" && entry.path.endsWith(".ini")).map(entry => entry.path);
     const parsed = new Map<string, any>();
-    await Promise.all(iniPaths.map(async iniPath => { try { const open = this.documents.get(iniPath); parsed.set(iniPath, parseIniDocument(open?.content ?? (await this.adapter!.readText(this.adapterPath(iniPath))).content, iniPath).value); } catch { /* incomplete files do not prevent completion */ } }));
+    await Promise.all(iniPaths.map(async iniPath => { try { const open = this.documents.get(iniPath); parsed.set(iniPath, parseIniDocument(open?.content ?? (await this.adapter!.readText(iniPath)).content, iniPath).value); } catch { /* incomplete files do not prevent completion */ } }));
     const sections = [...parsed.values()].flatMap(value => Object.keys(value));
     const ids = (prefix: string) => [...new Set(sections.filter(section => section.startsWith(prefix)).map(section => section.slice(prefix.length)))];
     const rooms = ids("room."), entities = ids("entity."), spawns = ids("spawn."), items = ids("inventory."), graphics = ids("graphic."), animations = ids("animation."), verbs = ids("verb.");
@@ -68,11 +65,10 @@ export class EditorProjectService extends EventTarget {
   }
   update(path: string, content: string) { const document = this.require(path); document.content = content; document.dirty = content !== document.savedContent; this.changed(true); }
   closeFile(path: string) { const document = this.require(path); if (document.dirty && !confirm(`Close ${document.name} and discard unsaved changes?`)) return false; this.documents.delete(path); this.changed(); return true; }
-  async saveFile(path: string) { if (!this.adapter) throw new Error("Open a package first."); const document = this.require(path); document.lastModified = await this.adapter.writeText(this.adapterPath(path), document.content); document.savedContent = document.content; document.dirty = false; document.externallyModified = false; this.changed(); }
+  async saveFile(path: string) { if (!this.adapter) throw new Error("Open a package first."); const document = this.require(path); document.lastModified = await this.adapter.writeText(path, document.content); document.savedContent = document.content; document.dirty = false; document.externallyModified = false; this.changed(); }
   async saveAllFiles() { for (const document of this.openDocuments.filter(item => item.dirty)) await this.saveFile(document.path); }
-  async checkExternalModifications() { if (!this.adapter) return []; const changed: EditorDocument[] = []; for (const document of this.openDocuments) { const stamp = await this.adapter.currentModified(this.adapterPath(document.path)); if (stamp && document.lastModified && stamp !== document.lastModified) { document.externallyModified = true; changed.push(document); } } if (changed.length) this.changed(true); return changed; }
-  closeProject() { if (this.hasDirtyDocuments && !confirm("Close this project and discard unsaved changes?")) return false; this.adapter?.close?.(); this.adapter = undefined; this.packagePrefix = ""; this.documents.clear(); this.entries = []; this.changed(true); return true; }
-  private adapterPath(path: string) { return `${this.packagePrefix}${path}`; }
+  async checkExternalModifications() { if (!this.adapter) return []; const changed: EditorDocument[] = []; for (const document of this.openDocuments) { const stamp = await this.adapter.currentModified(document.path); if (stamp && document.lastModified && stamp !== document.lastModified) { document.externallyModified = true; changed.push(document); } } if (changed.length) this.changed(true); return changed; }
+  closeProject() { if (this.hasDirtyDocuments && !confirm("Close this project and discard unsaved changes?")) return false; this.adapter?.close?.(); this.adapter = undefined; this.documents.clear(); this.entries = []; this.changed(true); return true; }
   private require(path: string) { const document = this.documents.get(path); if (!document) throw new Error(`Document is not open: ${path}`); return document; }
   private changed(contentChanged = false) { if (contentChanged) this.contentRevision++; this.dispatchEvent(new Event("change")); }
 }
