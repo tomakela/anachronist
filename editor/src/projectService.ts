@@ -56,6 +56,7 @@ export class EditorProjectService extends EventTarget {
     return { compileContext, index };
   }
   update(path: string, content: string) { const document = this.require(path); document.content = content; document.dirty = content !== document.savedContent; this.changed(true); }
+  closeFile(path: string) { const document = this.require(path); if (document.dirty && !confirm(`Close ${document.name} and discard unsaved changes?`)) return false; this.documents.delete(path); this.changed(); return true; }
   async saveFile(path: string) { if (!this.adapter) throw new Error("Open a package first."); const document = this.require(path); document.lastModified = await this.adapter.writeText(path, document.content); document.savedContent = document.content; document.dirty = false; document.externallyModified = false; this.changed(); }
   async saveAllFiles() { for (const document of this.openDocuments.filter(item => item.dirty)) await this.saveFile(document.path); }
   async checkExternalModifications() { if (!this.adapter) return []; const changed: EditorDocument[] = []; for (const document of this.openDocuments) { const stamp = await this.adapter.currentModified(document.path); if (stamp && document.lastModified && stamp !== document.lastModified) { document.externallyModified = true; changed.push(document); } } if (changed.length) this.changed(true); return changed; }
