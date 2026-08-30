@@ -105,6 +105,13 @@ overlap, with visual render order deciding equal priorities. For authoring, set
 `hotspot_overlay = true` in `[room]` (or `[runtime]`) to draw labeled cyan
 hotspot outlines.
 
+A room can set `background_image` to a graphic catalogue ID to stretch that
+bitmap across the logical display behind every entity. `background_color`
+remains the fallback and fills any edges exposed by screen shake. All bitmap
+decoding, processing, sprite/background drawing, and final canvas scaling use
+nearest-neighbor sampling; the HTML settings controls are not part of that
+pixel-art canvas pipeline.
+
 Verb sentence prepositions are package data (`preposition = at` makes the
 **Look** action read “Look at …”, while `object_preposition = on` produces
 “Use key on door”). **Use** accepts a room or inventory object first, waits for

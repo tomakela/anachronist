@@ -1,7 +1,7 @@
 import { parseIni, integer, tuple, list } from "./ini.js";
 import { BackgroundTasks, compile, instantiate, textDuration } from "./script.js";
 import { resolvePackagePath } from "./path.js";
-import { bitmapPixels, loadBitmaps } from "./bitmaps.js";
+import { bitmapPixels, loadBitmaps, nearestNeighbor } from "./bitmaps.js";
 import { parseActionBindings } from "./input.js";
 import { SaveStorage, snapshotRuntime, validateSnapshot } from "./save.js";
 import { DeterministicVM } from "./vm.js";
@@ -60,7 +60,7 @@ export class Runtime extends DeterministicVM {
     const aspect = this.width / this.height;
     const safeWidth = "(100dvw - env(safe-area-inset-left) - env(safe-area-inset-right))", safeHeight = "(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom))";
     this.canvas.style.aspectRatio = `${this.width} / ${this.height}`; this.canvas.style.setProperty("--game-width", `min(calc${safeWidth}, calc(${safeHeight} * ${aspect}))`); this.canvas.style.setProperty("--game-height", `min(calc${safeHeight}, calc(${safeWidth} / ${aspect}))`);
-    this.canvas.setAttribute("aria-label", ui.interface.accessible_label); this.canvas.setAttribute("role", "application"); this.canvas.tabIndex = 0; this.ctx = this.canvas.getContext("2d"); this.ctx.imageSmoothingEnabled = false;
+    this.canvas.setAttribute("aria-label", ui.interface.accessible_label); this.canvas.setAttribute("role", "application"); this.canvas.tabIndex = 0; this.ctx = nearestNeighbor(this.canvas.getContext("2d"));
     this.coarsePointer = matchMedia("(pointer: coarse)").matches;
     this.cursorMode = localStorage.getItem("anachronist.cursor-mode") || "drag";
     this.draggingSensitivity = Number(game.input.dragging_sensitivity);
@@ -260,6 +260,12 @@ export class Runtime extends DeterministicVM {
     c.fillStyle = background; c.fillRect(0, 0, this.width, this.height);
     c.save(); const [shakeX, shakeY] = shakeOffset(this.shakeTicks, integer(this.game.runtime.shake_amplitude || "2", "shake amplitude")); c.translate(shakeX, shakeY);
     c.fillStyle = background; c.fillRect(0, 0, this.width, this.height);
+    const backgroundImage = room?.room.background_image;
+    if (backgroundImage) {
+      const bitmap = this.bitmaps[backgroundImage];
+      if (!bitmap) throw new Error(`${scene.room}.room.background_image references unknown graphic ${backgroundImage}`);
+      nearestNeighbor(c).drawImage(bitmap, 0, 0, this.width, this.height);
+    }
     if (room) for (const entity of entityRenderOrder(scene.entities)) if (entity.visible !== "false") this.sprite(entity);
     if (room && (room.room.hotspot_overlay === "true" || this.game.runtime.hotspot_overlay === "true")) this.drawHotspots();
     if (!this.interfaceVisible) { c.restore(); return; }
@@ -302,7 +308,7 @@ export class Runtime extends DeterministicVM {
   }
   drawBitmap(entity, bitmap, source, x, y, w, h) {
     const angle = Number(entity.rotation || 0) * Math.PI / 180, args = source ? [bitmap, ...source, -w / 2, -h / 2, w, h] : [bitmap, -w / 2, -h / 2, w, h];
-    this.ctx.save(); this.ctx.translate(Math.round(x + w / 2), Math.round(y + h / 2)); if (angle) this.ctx.rotate(angle); this.ctx.drawImage(...args); this.ctx.restore();
+    this.ctx.save(); this.ctx.translate(Math.round(x + w / 2), Math.round(y + h / 2)); if (angle) this.ctx.rotate(angle); nearestNeighbor(this.ctx).drawImage(...args); this.ctx.restore();
   }
   textRegion(spec, text) { const [x, y, w, h] = tuple(spec.rect, 4, "text region"), padding = integer(spec.padding || "4", "text padding"); this.ctx.fillStyle = this.ui.palette.panel; this.ctx.fillRect(x, y, w, h); this.ctx.fillStyle = this.ui.palette.text; this.ctx.font = this.ui.interface.font; this.ctx.textAlign = "left"; this.ctx.textBaseline = "middle"; this.ctx.fillText(text || "", x + padding, y + h / 2, w - padding * 2); }
   speech(actor, text) {

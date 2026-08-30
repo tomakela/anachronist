@@ -3,11 +3,17 @@ import { resolvePackagePath } from "./path.js";
 const base64Suffix = ".base64";
 const pixelCache = new WeakMap();
 
+/** Keep every canvas bitmap operation faithful to the package's pixel grid. */
+export function nearestNeighbor(context) {
+  context.imageSmoothingEnabled = false;
+  return context;
+}
+
 /** Decode and cache bitmap pixels once for alpha-aware pointer hit testing. */
 export function bitmapPixels(bitmap, canvasFactory = () => document.createElement("canvas")) {
   if (pixelCache.has(bitmap)) return pixelCache.get(bitmap);
   const canvas = canvasFactory(); canvas.width = bitmap.width; canvas.height = bitmap.height;
-  const context = canvas.getContext("2d", { willReadFrequently: true }); context.drawImage(bitmap, 0, 0);
+  const context = nearestNeighbor(canvas.getContext("2d", { willReadFrequently: true })); context.drawImage(bitmap, 0, 0);
   const result = { width: canvas.width, height: canvas.height, data: context.getImageData(0, 0, canvas.width, canvas.height).data };
   pixelCache.set(bitmap, result); return result;
 }
@@ -18,7 +24,7 @@ export function transparentBitmap(bitmap, color, canvasFactory = () => document.
   if (!match) throw new Error(`transparent_color: expected #RRGGBB or #RRGGBBAA, got ${color}`);
   const key = match.slice(1, 4).map((part) => parseInt(part, 16));
   const canvas = canvasFactory(); canvas.width = bitmap.width; canvas.height = bitmap.height;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
+  const context = nearestNeighbor(canvas.getContext("2d", { willReadFrequently: true }));
   context.drawImage(bitmap, 0, 0);
   const image = context.getImageData(0, 0, canvas.width, canvas.height);
   for (let i = 0; i < image.data.length; i += 4) {

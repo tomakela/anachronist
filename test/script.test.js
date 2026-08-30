@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { BackgroundTasks, compile, instantiate, textDuration } from "../engine/script.js";
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
-import { bitmapPixels, loadBitmaps, transparentBitmap } from "../engine/bitmaps.js";
+import { bitmapPixels, loadBitmaps, nearestNeighbor, transparentBitmap } from "../engine/bitmaps.js";
 import { accelerateCommandQueue, advanceCutSceneQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, objectSuggestedVerb, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
 import { SaveStorage, snapshotRuntime, stableStringify, validateSnapshot } from "../engine/save.js";
 import { parseActionBindings } from "../engine/input.js";
@@ -647,6 +647,27 @@ test("walk masks scale bitmap pixels and allow only visible non-black areas", ()
   assert.equal(allowed([10, 75]), true);
   assert.equal(allowed([75, 75]), false);
   assert.equal(allowed([100, 50]), false);
+});
+
+test("bitmap canvas operations explicitly select nearest-neighbor sampling", () => {
+  const context = { imageSmoothingEnabled: true };
+  assert.equal(nearestNeighbor(context), context);
+  assert.equal(context.imageSmoothingEnabled, false);
+});
+
+test("rooms draw a configured bitmap behind their entities with nearest-neighbor sampling", () => {
+  const calls = [], context = {
+    imageSmoothingEnabled: true,
+    fillRect() {}, save() {}, restore() {}, translate() {},
+    drawImage(...args) { calls.push([this.imageSmoothingEnabled, ...args]); }
+  };
+  const runtime = Object.assign(Object.create(Runtime.prototype), {
+    ctx: context, rooms: { hall: { room: { background_image: "hall.background" } } },
+    bitmaps: { "hall.background": "bitmap" }, width: 320, height: 200,
+    shakeTicks: 0, game: { runtime: {} }, interfaceVisible: false
+  });
+  runtime.draw({ room: "hall", entities: {} });
+  assert.deepEqual(calls, [[false, "bitmap", 0, 0, 320, 200]]);
 });
 
 test("taking the wall clock creates the persistent fallen-clock scene", async () => {
