@@ -146,3 +146,17 @@ first and `debug.ana` second with the same room ownership and entity context, so
 handler order remains deterministic. A missing `debug.ini` or room `debug.ana`
 (HTTP 404) is ignored. Invalid INI/script contents, network failures, and every
 other HTTP error still stop startup and are reported normally.
+## Framework-neutral engine API
+
+`engine/project.js` exports `loadProject(entryPath, adapters)` for package discovery,
+INI parsing, script compilation, catalogue resolution, and asset loading without a
+DOM dependency. Adapters provide `loadText(path, { optional })` and optionally
+`loadAssets(graphics, resourceBase)`. The returned project includes configuration,
+UI and input data, room and inventory catalogues and definitions, graphics and
+animation metadata, decoded bitmaps, compiled handlers, and diagnostics.
+
+Editors can call `validateProject` to run the same parser, compiler, and loading
+pipeline used at game startup. `engine/runtime.js` separately exports `Runtime`;
+construct it with the loaded project and explicit `host` and `storage` adapters,
+plus optional `clock`, `scheduler`, and `initialRoom` values. The browser-specific
+fetch and DOM wiring remains in the thin `engine/bootstrap.js` entry point.
