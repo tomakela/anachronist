@@ -123,3 +123,19 @@ contain any number of consecutive `say` or
 `narrate` commands; each is displayed in order, with its duration calculated
 from the configurable base, per-character, and minimum tick values in
 `game.ini`.
+
+### Debug configuration and scripts
+
+Add `?debug` to the game URL to enable debug mode (other query parameters are
+preserved when it is toggled from the **Game settings** cog). In this mode the
+host optionally loads `debug.ini` beside the package entry file—for the default
+`game/game.ini`, this is `game/debug.ini`. Its top-level variables and individual
+section keys override `game.ini`; variables and section keys it does not mention
+remain unchanged, and entirely new sections are allowed.
+
+Each catalogued room also implicitly gets an optional `debug.ana` beside its
+`room.ini`; no room-catalogue entry is needed. The normal `script.ana` is compiled
+first and `debug.ana` second with the same room ownership and entity context, so
+handler order remains deterministic. A missing `debug.ini` or room `debug.ana`
+(HTTP 404) is ignored. Invalid INI/script contents, network failures, and every
+other HTTP error still stop startup and are reported normally.
