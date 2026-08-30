@@ -9,14 +9,14 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
+    "@monaco-editor/react": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
+    "monaco-editor": "0.53.0",
     "react": "latest",
     "react-dom": "latest",
-    "@monaco-editor/react": "latest",
-    "monaco-editor": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "typescript": "latest",
+    "vite": "latest"
   }
 }
