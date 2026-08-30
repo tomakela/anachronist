@@ -20,8 +20,8 @@ export function RoomDocument({ path, source, service, onChange }: Props) {
   const entities = useMemo(() => Object.fromEntries(Object.entries(room).filter(([key]) => key.startsWith("entity.")).map(([key, value]: any) => [key.slice(7), { ...value, id: key.slice(7), position: nums(value.position) }])), [room]);
 
   useEffect(() => { let live = true; (async () => {
-    const gamePath = service.entries.find(entry => /(^|\/)game\/game\.ini$/.test(entry.path))?.path;
-    if (!gamePath) throw new Error("game/game.ini was not found");
+    const gamePath = service.entries.find(entry => entry.kind === "file" && /(^|\/)game\.ini$/.test(entry.path))?.path;
+    if (!gamePath) throw new Error("game.ini was not found in the opened folder");
     const game = parseIniDocument(await service.readProjectText(gamePath), gamePath).value;
     const base = gamePath.slice(0, gamePath.lastIndexOf("/") + 1), graphicsPath = base + game.package.graphics;
     const graphics = parseIniDocument(await service.readProjectText(graphicsPath), graphicsPath).value;
