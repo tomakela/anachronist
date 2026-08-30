@@ -360,6 +360,15 @@ test("using the cup of water on the bush reveals and collects the hidden stick",
   ]);
 });
 
+test("the fountain gives water only after the coin has been tossed", async () => {
+  const handlers = compile(await readFile(new URL("../game/rooms/garden/script.ana", import.meta.url), "utf8"), { roomId: "garden", entities: ["gate", "fountain", "wire", "lamp"] });
+  const handler = handlers.find((candidate) => candidate.event === "entity.use_item" && candidate.localTarget === "fountain");
+  const before = instantiate(handler, ["coffee_cup", "fountain"], { game: { coin_thrown: false } });
+  const after = instantiate(handler, ["coffee_cup", "fountain"], { game: { coin_thrown: true } });
+  assert.deepEqual(before.map(({ op }) => op), ["say"]);
+  assert.deepEqual(after.map(({ op }) => op), ["walk", "replace", "say"]);
+});
+
 test("an invalid item-use tail rejects the entire transaction", () => {
   const commands = [{ op: "walk", actor: "player", target: "key" }, { op: "take", target: "key" }, { op: "walk", actor: "player", target: "missing" }];
   const world = { inventory: [], entities: { player: { visible: "true" }, key: { visible: "true" } }, rooms: {} };
@@ -532,6 +541,26 @@ test("rooms can grant inventory items on entry", () => {
   assert.deepEqual(roomEntryItems({ room: {}, "inventory.coffee": { label: "coffee cup", graphic: "cup" } }), [
     { id: "coffee", label: "coffee cup", graphic: "cup" }
   ]);
+});
+
+test("room inventory is granted only on the first visit, even after an item is spent", () => {
+  const runtime = fallbackRuntime();
+  Object.assign(runtime, {
+    room: null,
+    rooms: {
+      hall: { room: {}, "spawn.entry": { position: "0,0" }, "inventory.coin": {} },
+      garden: { room: {}, "spawn.entry": { position: "0,0" } }
+    },
+    roomState: { hall: { visited: false }, garden: {} }, roomEntities: {}, inventory: [], inventoryEntities: {},
+    animations: { player: { graphic: "player", size: "1,1" } }, bitmaps: {}, width: 320, height: 200,
+    backgroundTasks: { cancelRoom() {} }, dispatch() {}, globals: {}
+  });
+  runtime.enter("hall", "entry");
+  assert.deepEqual(runtime.inventory, ["coin"]);
+  runtime.inventory = [];
+  runtime.enter("garden", "entry");
+  runtime.enter("hall", "entry");
+  assert.deepEqual(runtime.inventory, []);
 });
 
 test("inventory rows clamp and enable only useful arrows", () => {
