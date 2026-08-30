@@ -17,12 +17,12 @@ export function overlayIni(base, override) {
 }
 
 export async function compileRoomScripts(scriptPath, roomIniPath, context, debugMode, loadText, compiler = compile, diagnostics = []) {
-  const handlers = compiler(await loadText(scriptPath), context);
+  const handlers = compiler(await loadText(scriptPath), compiler === compile ? { ...context, path: scriptPath } : context);
   if (debugMode) {
     const debugPath = siblingPath(roomIniPath, "debug.ana");
     const source = await loadText(debugPath, { optional: true });
     if (source === null || source === undefined) diagnostics.push({ severity: "info", code: "optional-file-missing", path: debugPath, message: "Optional room debug script not found" });
-    else handlers.push(...compiler(source, context));
+    else handlers.push(...compiler(source, compiler === compile ? { ...context, path: debugPath } : context));
   }
   return handlers;
 }
@@ -49,11 +49,12 @@ export async function loadProject(entryPath, { loadText, loadAssets = async () =
   const graphics = await readIni(resolvePackagePath(resourceBase, graphicsPath));
   const animations = await readIni(resolvePackagePath(resourceBase, resourceCatalogue.catalogue.player_animations));
   const bitmaps = await loadAssets(graphics, resourceBase);
-  const handlers = compiler(await loadText(resolvePackagePath(base, configuration.package.entry_script)));
+  const entryScriptPath = resolvePackagePath(base, configuration.package.entry_script);
+  const handlers = compiler(await loadText(entryScriptPath), { path: entryScriptPath });
   const rooms = Object.create(null);
   for (const id of list(roomCatalogue.catalogue.rooms)) {
     const spec = roomCatalogue[`room.${id}`];
-    if (!spec) throw new Error(`room catalogue references missing section room.${id}`);
+    if (!spec) { diagnostics.push(projectDiagnostic(entryPath, "catalogue-missing-entry", `Room catalogue references missing section room.${id}`)); continue; }
     const iniPath = resolvePackagePath(base, spec.path);
     rooms[id] = await readIni(iniPath);
     const entities = Object.keys(rooms[id]).filter((section) => section.startsWith("entity.")).map((section) => section.slice(7));
@@ -67,16 +68,57 @@ export async function loadProject(entryPath, { loadText, loadAssets = async () =
     const itemBase = siblingPath(path, "");
     for (const id of list(itemCatalogue.catalogue.items)) {
       const definition = itemCatalogue[`inventory.${id}`];
-      if (!definition) throw new Error(`item catalogue references missing section inventory.${id}`);
+      if (!definition) { diagnostics.push(projectDiagnostic(path, "catalogue-missing-entry", `Item catalogue references missing section inventory.${id}`)); continue; }
       items[id] = definition;
-      if (definition.script) handlers.push(...compiler(await loadText(resolvePackagePath(itemBase, definition.script)), { itemId: id }));
+      if (definition.script) {
+        const scriptPath = resolvePackagePath(itemBase, definition.script);
+        handlers.push(...compiler(await loadText(scriptPath), { itemId: id, path: scriptPath }));
+      }
     }
   }
+  validateReferences({ entryPath, roomCatalogue, rooms, items, graphics, handlers, diagnostics });
   return { configuration, ui, input, roomCatalogue, rooms, itemCatalogue, items, resourceCatalogue, graphics, animations, bitmaps, handlers, diagnostics };
+}
+
+const projectDiagnostic = (path, code, message, severity = "error") => ({
+  path, filePath: path, line: 1, column: 1, range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 1, offset: 0 } }, severity, code, message
+});
+
+function validateReferences({ entryPath, rooms, items, graphics, handlers, diagnostics }) {
+  const graphicIds = new Set(Object.keys(graphics).filter((id) => id.startsWith("graphic.")).map((id) => id.slice(8)));
+  for (const [roomId, room] of Object.entries(rooms)) {
+    const roomPath = room.$syntax?.path || entryPath;
+    const spawns = new Set(Object.keys(room).filter((id) => id.startsWith("spawn.")).map((id) => id.slice(6)));
+    for (const [section, value] of Object.entries(room)) {
+      if (section.startsWith("entity.") && value.graphic && !graphicIds.has(value.graphic)) diagnostics.push(projectDiagnostic(roomPath, "graphic-not-found", `${section} references nonexistent graphic ${value.graphic}`));
+      if (section.startsWith("trigger.")) {
+        const destination = section.slice(8);
+        if (!Object.hasOwn(rooms, destination)) diagnostics.push(projectDiagnostic(roomPath, "room-not-found", `${section} references nonexistent room ${destination}`));
+        else if (!Object.hasOwn(rooms[destination], `spawn.${roomId}`)) diagnostics.push(projectDiagnostic(roomPath, "spawn-not-found", `Room ${destination} has no spawn named ${roomId}`));
+      }
+    }
+    // A room should always have at least one usable entry point.
+    if (!spawns.size) diagnostics.push(projectDiagnostic(roomPath, "spawn-missing", `Room ${roomId} declares no spawns`, "warning"));
+  }
+  const walk = (body, handler) => {
+    for (const command of body || []) {
+      if (command.op === "enter") {
+        if (!Object.hasOwn(rooms, command.room)) diagnostics.push(projectDiagnostic(entryPath, "room-not-found", `Script references nonexistent room ${command.room}`));
+        else if (!Object.hasOwn(rooms[command.room], `spawn.${command.spawn}`)) diagnostics.push(projectDiagnostic(entryPath, "spawn-not-found", `Room ${command.room} has no spawn named ${command.spawn}`));
+      }
+      if (handler.roomId && ["show", "hide", "enable", "disable"].includes(command.op) && !Object.hasOwn(rooms[handler.roomId], `entity.${command.target}`) && !Object.hasOwn(items, command.target))
+        diagnostics.push(projectDiagnostic(entryPath, "entity-unavailable", `${command.target} is unavailable in room ${handler.roomId}`));
+      walk(command.body, handler); walk(command.yes, handler); walk(command.no, handler);
+    }
+  };
+  for (const handler of handlers) walk(handler.body, handler);
 }
 
 /** Editor-facing validation uses exactly the production loader and parsers. */
 export async function validateProject(entryPath, loaders) {
   try { return await loadProject(entryPath, loaders); }
-  catch (error) { return { project: null, diagnostics: [{ severity: "error", code: "project-invalid", message: error.message, error }] }; }
+  catch (error) {
+    const diagnostic = error.diagnostic || projectDiagnostic(error.path || entryPath, "project-invalid", error.message);
+    return { project: null, diagnostics: [{ ...diagnostic, message: error.message, error }] };
+  }
 }
