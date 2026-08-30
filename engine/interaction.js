@@ -1,3 +1,5 @@
+import { nearestNeighbor } from "./bitmaps.js";
+
 /** Build a classic adventure-game sentence without moving its preposition. */
 export function verbSentence(ui, label, verb, first, second = null) {
   const spec = ui[`verb.${verb}`] || {};
@@ -231,7 +233,7 @@ export function spriteAlphaHit(point, bounds, source, pixels, rotation = 0) {
 export function bitmapWalkRegion(bitmap, logicalWidth, logicalHeight, canvasFactory = () => document.createElement("canvas")) {
   if (!bitmap) throw new Error("walk_mask references an unknown graphic");
   const canvas = canvasFactory(); canvas.width = bitmap.width; canvas.height = bitmap.height;
-  const context = canvas.getContext("2d", { willReadFrequently: true }); context.drawImage(bitmap, 0, 0);
+  const context = nearestNeighbor(canvas.getContext("2d", { willReadFrequently: true })); context.drawImage(bitmap, 0, 0);
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
   return ([x, y]) => {
     if (x < 0 || y < 0 || x >= logicalWidth || y >= logicalHeight) return false;
