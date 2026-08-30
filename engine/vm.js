@@ -1,6 +1,6 @@
 import { integer, list, tuple } from "./ini.js";
 import { instantiate, textDuration } from "./script.js";
-import { advanceCutSceneQueue, advanceWalk, bitmapWalkRegion, enteredTriggers, interfacePoint, interpolatedScale, parseScalingStops, retainedRoomEntities, roomEntryItems, verbSentence } from "./interaction.js";
+import { advanceCutSceneQueue, advanceWalk, bitmapWalkRegion, enteredTriggers, findWalkPath, interfacePoint, interpolatedScale, parseScalingStops, retainedRoomEntities, roomEntryItems, verbSentence } from "./interaction.js";
 
 const inside = (x, y, [bx, by, bw, bh]) => x >= bx && y >= by && x < bx + bw && y < by + bh;
 const title = (value) => value[0].toUpperCase() + value.slice(1);
@@ -180,7 +180,24 @@ export class DeterministicVM {
     const player = this.entities[this.game.protocol.player_actor];
     if (player?.actionTicks > 0) { if (--player.actionTicks === 0) player.action = null; return; }
     const command = this.queue[0]; if (!command) { this.actionSentence = ""; return; }
-    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const isPlayer = actor.id === this.game.protocol.player_actor, speed = this.walkSpeed * (isPlayer ? interpolatedScale(actor.position[1], this.playerWalkSpeedScaling) : 1); const dx = target[0] - actor.position[0], dy = target[1] - actor.position[1]; actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); const result = advanceWalk(actor.position, target, speed, command.fast ? this.fastWalkMultiplier : 1, isPlayer ? this.walkable : () => true, (point) => { if (isPlayer) this.updateTriggers(point); }); actor.position = result.point; actor.moving = !result.reached && !result.blocked; if (result.reached || result.blocked) { actor.moving = false; this.queue.shift(); if (result.blocked) this.actionSentence = ""; } return; }
+    if (command.op === "walk") {
+      const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position;
+      if (!actor || !target) return void this.queue.shift();
+      const isPlayer = actor.id === this.game.protocol.player_actor;
+      if (isPlayer && !command.route) command.route = findWalkPath(actor.position, target, this.walkable, this.width, this.height);
+      const route = isPlayer ? command.route : [target];
+      let budget = this.walkSpeed * (isPlayer ? interpolatedScale(actor.position[1], this.playerWalkSpeedScaling) : 1) * (command.fast ? this.fastWalkMultiplier : 1);
+      while (route.length && budget > 0) {
+        const waypoint = route[0], dx = waypoint[0] - actor.position[0], dy = waypoint[1] - actor.position[1];
+        actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
+        const distance = Math.hypot(dx, dy), result = advanceWalk(actor.position, waypoint, Math.min(budget, distance), 1, isPlayer ? this.walkable : () => true, (point) => { if (isPlayer) this.updateTriggers(point); });
+        actor.position = result.point; budget -= Math.min(budget, distance);
+        if (result.reached) route.shift(); else { actor.moving = !result.blocked; if (result.blocked) this.actionSentence = ""; break; }
+      }
+      actor.moving = route.length > 0;
+      if (!route.length || !actor.moving) { actor.moving = false; this.queue.shift(); }
+      return;
+    }
     this.queue.shift();
     return this.execute(command);
   }

@@ -5,7 +5,7 @@ import { BackgroundTasks, compile, instantiate, textDuration } from "../engine/s
 import { parseIni } from "../engine/ini.js";
 import { resolvePackagePath } from "../engine/path.js";
 import { bitmapPixels, loadBitmaps, nearestNeighbor, transparentBitmap } from "../engine/bitmaps.js";
-import { accelerateCommandQueue, advanceCutSceneQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, objectSuggestedVerb, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
+import { accelerateCommandQueue, advanceCutSceneQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityIsInteractive, entityRenderOrder, entityTargetAt, findWalkPath, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, objectSuggestedVerb, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "../engine/interaction.js";
 import { SaveStorage, snapshotRuntime, stableStringify, validateSnapshot } from "../engine/save.js";
 import { parseActionBindings } from "../engine/input.js";
 import { Runtime } from "../engine/bootstrap.js";
@@ -647,6 +647,21 @@ test("walk masks scale bitmap pixels and allow only visible non-black areas", ()
   assert.equal(allowed([10, 75]), true);
   assert.equal(allowed([75, 75]), false);
   assert.equal(allowed([100, 50]), false);
+});
+
+test("walk paths route around masked obstacles", () => {
+  const walkable = ([x, y]) => x !== 2 || y === 4;
+  const route = findWalkPath([0, 0], [4, 0], walkable, 5, 5);
+  assert.deepEqual(route.at(-1), [4, 0]);
+  assert.ok(route.some(([x, y]) => x === 2 && y === 4));
+  assert.ok(route.every(walkable));
+});
+
+test("walk paths choose the closest reachable point for a disallowed click", () => {
+  const walkable = ([x]) => x < 2;
+  const route = findWalkPath([0, 2], [4, 2], walkable, 5, 5);
+  assert.deepEqual(route.at(-1), [1, 2]);
+  assert.ok(route.every(walkable));
 });
 
 test("bitmap canvas operations explicitly select nearest-neighbor sampling", () => {
