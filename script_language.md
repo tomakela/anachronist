@@ -72,10 +72,18 @@ cup in whichever room currently contains the player.
 ### Interaction fallbacks
 
 Missing handlers use the matching `[fallback.<verb>]` text in `interface.ini`.
-Two-object Use uses `[fallback.use_item]`. `{first}`, `{second}`, and `{target}`
-are replaced with configured object labels, and `{verb}` with the configured
-verb label. A rejected two-object transaction uses the same fallback before
-walking or animation starts.
+Use is two-object by default: after the first room or inventory object is
+selected, the interface waits for a distinct target and dispatches
+`entity.use_item`. Defining an explicit handler such as `on lever.use()` or
+`on inventory.notebook.use()` overrides that default for its object, dispatches
+`entity.use` immediately after the first selection, and also applies when Use
+is the object's suggested action. The `use` and `use_item` events are separate;
+a `use` handler is never used as a fallback for a two-object combination.
+
+Missing two-object Use handlers use `[fallback.use_item]`. `{first}`, `{second}`,
+and `{target}` are replaced with configured object labels, and `{verb}` with
+the configured verb label. A rejected two-object transaction uses the same
+fallback before walking or animation starts.
 
 Scripts override those defaults in this precedence order: current-room entity,
 inventory item, current room, package entry script, then interface text. Entity

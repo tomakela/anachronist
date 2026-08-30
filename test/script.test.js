@@ -419,6 +419,72 @@ test("unsupported single-object verbs enqueue their configured narration", () =>
   assert.deepEqual(runtime.queue, [{ op: "narrate", value: "No opening painted door." }]);
 });
 
+test("an explicit room-object use handler runs on the first selection", () => {
+  const handler = compile('on door.use() {\n say "Opened"\n}', { roomId: "hall", entities: ["door"] })[0];
+  const runtime = fallbackRuntime([handler]);
+  Object.assign(runtime, {
+    interactive: true, activeVerb: "use", firstObject: null, message: "", width: 320, height: 200,
+    hoverTarget: "door", actionSentence: "",
+    inventoryLayout: () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} }),
+    targetAt: () => "door"
+  });
+  runtime.pointer({ button: 0, point: [10, 10] });
+  assert.deepEqual(runtime.queue, [
+    { op: "animate", actor: "player", animation: "use" },
+    { op: "say", value: "Opened" }
+  ]);
+  assert.equal(runtime.actionSentence, "Use painted door");
+  assert.equal(runtime.activeVerb, null);
+  assert.equal(runtime.firstObject, null);
+});
+
+test("Use still waits for a second object when no single-object handler exists", () => {
+  const runtime = fallbackRuntime();
+  Object.assign(runtime, {
+    interactive: true, activeVerb: "use", firstObject: null, message: "", width: 320, height: 200,
+    hoverTarget: "door", actionSentence: "",
+    inventoryLayout: () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} }),
+    targetAt: () => "door"
+  });
+  runtime.pointer({ button: 0, point: [10, 10] });
+  assert.deepEqual(runtime.queue, []);
+  assert.equal(runtime.activeVerb, "use");
+  assert.equal(runtime.firstObject, "door");
+});
+
+test("an explicit inventory-object use handler runs on the first selection", () => {
+  const handler = compile('on inventory.key.use() {\n narrate "Examined"\n}', { itemId: "key" })[0];
+  const runtime = fallbackRuntime([handler]);
+  runtime.inventory.push("key");
+  Object.assign(runtime, {
+    interactive: true, activeVerb: "use", firstObject: null, message: "", width: 320, height: 200,
+    hoverTarget: "key", actionSentence: "",
+    inventoryLayout: () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} }),
+    targetAt: () => "key"
+  });
+  runtime.pointer({ button: 0, point: [10, 10] });
+  assert.equal(runtime.queue.at(-1).value, "Examined");
+  assert.equal(runtime.actionSentence, "Use small brass key");
+  assert.equal(runtime.firstObject, null);
+});
+
+test("suggested Use immediately runs an explicit single-object handler", () => {
+  const handler = compile('on door.use() {\n say "Opened"\n}', { roomId: "hall", entities: ["door"] })[0];
+  const runtime = fallbackRuntime([handler]);
+  runtime.ui.verb_panel.verbs = "look, use";
+  runtime.entities.door.suggested_verb = "use";
+  Object.assign(runtime, {
+    interactive: true, activeVerb: null, firstObject: null, message: "", width: 320, height: 200,
+    hoverTarget: "door", actionSentence: "",
+    inventoryLayout: () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} }),
+    targetAt: () => "door"
+  });
+  runtime.pointer({ button: 2, point: [10, 10] });
+  assert.equal(runtime.queue.at(-1).value, "Opened");
+  assert.equal(runtime.activeVerb, null);
+  assert.equal(runtime.firstObject, null);
+});
+
 test("invalid item combinations interpolate both configured labels", () => {
   const runtime = fallbackRuntime();
   runtime.enqueueFallback("use_item", ["key", "door"]);

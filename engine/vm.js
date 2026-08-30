@@ -146,7 +146,7 @@ export class DeterministicVM {
       if (target) {
         this.clearSelection();
         const verb = this.suggestedVerb(target);
-        if (verb === this.protocolValue("use_verb")) { this.activeVerb = verb; this.firstObject = target; this.hoverTarget = null; }
+        if (verb === this.protocolValue("use_verb") && !this.matchingHandler(`entity.${verb}`, [target])) { this.activeVerb = verb; this.firstObject = target; this.hoverTarget = null; }
         else this.perform(verb, target);
       }
       return;
@@ -160,7 +160,10 @@ export class DeterministicVM {
       return;
     }
     if (this.activeVerb === this.protocolValue("use_verb")) {
-      if (!this.firstObject && target) { this.firstObject = target; this.hoverTarget = null; return; }
+      if (!this.firstObject && target) {
+        if (this.matchingHandler(`entity.${this.activeVerb}`, [target])) this.perform(this.activeVerb, target);
+        else { this.firstObject = target; this.hoverTarget = null; return; }
+      }
       else if (target) {
         this.interruptCommands(); this.actionSentence = this.verbSentence(this.protocolValue("use_verb"), this.firstObject, target);
         const commands = this.commands("entity.use_item", [this.firstObject, target]);

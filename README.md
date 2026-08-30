@@ -114,12 +114,16 @@ pixel-art canvas pipeline.
 
 Verb sentence prepositions are package data (`preposition = at` makes the
 **Look** action read “Look at …”, while `object_preposition = on` produces
-“Use key on door”). **Use** accepts a room or inventory object first, waits for
-a distinct target, and omits the first object from the available targets. A
-ground item transaction can walk to and take that item before approaching its
-target; an already inventoried item skips those obsolete steps. The complete
-transaction is rejected before movement if any step is invalid. Two-object use
-dispatches `entity.use_item`. Inventory presentation is defined independently
+“Use key on door”). **Use** normally accepts a room or inventory object first,
+waits for a distinct target, and omits the first object from the available
+targets. An explicit single-object handler such as `on lever.use()` or
+`on inventory.notebook.use()` overrides that behavior and runs immediately
+when its object is selected, including when Use is the object's suggested verb.
+Otherwise, a ground item transaction can walk to and take that item before
+approaching its target; an already inventoried item skips those obsolete steps.
+The complete transaction is rejected before movement if any step is invalid.
+Two-object use dispatches `entity.use_item`; single-object use dispatches the
+separate `entity.use` event. Inventory presentation is defined independently
 from room entities in
 `game/items/inventory.ini`; its `graphic` and `label` always win after pickup.
 Inventory-only handlers use explicit names such as `on inventory.key.look()`, so
