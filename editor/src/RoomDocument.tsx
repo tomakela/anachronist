@@ -11,7 +11,7 @@ const nums = (value = "") => value.split(",").map(Number);
 
 export function RoomDocument({ path, source, service, onChange }: Props) {
   const scene = useRef<HTMLCanvasElement>(null), overlay = useRef<HTMLCanvasElement>(null);
-  const [assets, setAssets] = useState<any>(), [zoom, setZoom] = useState(2), [pan, setPan] = useState([0, 0]), [cursor, setCursor] = useState([0, 0]);
+  const [assets, setAssets] = useState<any>(), [assetError, setAssetError] = useState(""), [zoom, setZoom] = useState(2), [pan, setPan] = useState([0, 0]), [cursor, setCursor] = useState([0, 0]);
   const [selected, setSelected] = useState<string>(), [snap, setSnap] = useState(1);
   const [layers, setLayers] = useState({ hotspots: true, triggers: true, walk: false, origins: true, perspective: true });
   const history = useRef<string[]>([]), future = useRef<string[]>([]), drag = useRef<any>(null);
@@ -26,10 +26,10 @@ export function RoomDocument({ path, source, service, onChange }: Props) {
     const base = gamePath.slice(0, gamePath.lastIndexOf("/") + 1), graphicsPath = base + game.package.graphics;
     const graphics = parseIniDocument(await service.readProjectText(graphicsPath), graphicsPath).value;
     const resourceBase = graphicsPath.slice(0, graphicsPath.lastIndexOf("/") + 1);
-    const fetcher = async (input: RequestInfo | URL) => { const url = String(input); return url.startsWith("data:") ? fetch(url) : new Response(await service.readProjectText(url), { status: 200 }); };
+    const fetcher = async (input: RequestInfo | URL) => { const url = String(input); if (url.startsWith("data:")) return fetch(url); try { return new Response(await service.readProjectBlob(url), { status: 200 }); } catch { return new Response(null, { status: 404 }); } };
     const bitmaps = await loadBitmaps(graphics, resourceBase, fetcher);
-    if (live) setAssets({ graphics, bitmaps, dimensions: [Number(game.display.logical_width), Number(game.display.logical_height)] });
-  })().catch(console.error); return () => { live = false; }; }, [service]);
+    if (live) { setAssets({ graphics, bitmaps, dimensions: [Number(game.display.logical_width), Number(game.display.logical_height)] }); setAssetError(""); }
+  })().catch(error => { if (live) setAssetError(error instanceof Error ? error.message : String(error)); }); return () => { live = false; }; }, [service]);
 
   useEffect(() => {
     if (!assets || !scene.current || !overlay.current) return;
@@ -63,5 +63,6 @@ export function RoomDocument({ path, source, service, onChange }: Props) {
   const up = () => { if (drag.current) { history.current.push(drag.current.source); future.current = []; } drag.current = null; };
   const undo = () => { const value = history.current.pop(); if (value !== undefined) { future.current.push(source); onChange(value); } }, redo = () => { const value = future.current.pop(); if (value !== undefined) { history.current.push(source); onChange(value); } };
 
-  return <div className="room-document"><div className="room-tools"><button onClick={undo}>↶ Undo</button><button onClick={redo}>↷ Redo</button><label>Zoom <input type="range" min="1" max="6" step=".25" value={zoom} onChange={e => setZoom(+e.target.value)} /></label><label>Grid <input type="number" min="1" max="64" value={snap} onChange={e => setSnap(Math.max(1, +e.target.value))} /></label>{Object.keys(layers).map(key => <label key={key}><input type="checkbox" checked={(layers as any)[key]} onChange={e => setLayers({ ...layers, [key]: e.target.checked })} />{key}</label>)}<span>{cursor[0]}, {cursor[1]}</span></div><div className="room-viewport" onWheel={e => { if (e.ctrlKey) setZoom(Math.max(.5, Math.min(8, zoom - Math.sign(e.deltaY) * .25))); else setPan([pan[0] - e.deltaX, pan[1] - e.deltaY]); }}><div className="room-stage" style={{ width: dimensions[0] * zoom, height: dimensions[1] * zoom, transform: `translate(${pan[0]}px,${pan[1]}px)` }}><canvas ref={scene} /><canvas className="author-overlay" ref={overlay} onPointerDown={down} onPointerMove={move} onPointerUp={up} /></div></div></div>;
+  const selectGraphic = (graphic: string) => selected && onChange(editIniProperty(source, `entity.${selected}`, "graphic", graphic));
+  return <div className="room-document"><div className="room-tools"><button onClick={undo}>↶ Undo</button><button onClick={redo}>↷ Redo</button><label>Zoom <input type="range" min="1" max="6" step=".25" value={zoom} onChange={e => setZoom(+e.target.value)} /></label><label>Grid <input type="number" min="1" max="64" value={snap} onChange={e => setSnap(Math.max(1, +e.target.value))} /></label>{Object.keys(layers).map(key => <label key={key}><input type="checkbox" checked={(layers as any)[key]} onChange={e => setLayers({ ...layers, [key]: e.target.checked })} />{key}</label>)}<span>{cursor[0]}, {cursor[1]}</span></div>{assetError && <div className="warning">Room graphics could not be loaded: {assetError}</div>}<div className="room-body"><aside className="room-objects"><h2>ROOM OBJECTS</h2>{Object.values(entities).map((entity: any) => <button key={entity.id} className={selected === entity.id ? "selected" : ""} onClick={() => setSelected(entity.id)}><span>◆</span>{entity.id}</button>)}{selected && <div className="graphic-picker"><label htmlFor="entity-graphic">Graphic</label><select id="entity-graphic" value={(entities as any)[selected]?.graphic || ""} onChange={event => selectGraphic(event.target.value)}>{Object.keys(assets?.graphics || {}).filter(key => key.startsWith("graphic.")).map(key => key.slice(8)).map(id => <option key={id}>{id}</option>)}</select><small>Select an object here or click its sprite, then choose any project graphic.</small></div>}</aside><div className="room-viewport" onWheel={e => { if (e.ctrlKey) setZoom(Math.max(.5, Math.min(8, zoom - Math.sign(e.deltaY) * .25))); else setPan([pan[0] - e.deltaX, pan[1] - e.deltaY]); }}><div className="room-stage" style={{ width: dimensions[0] * zoom, height: dimensions[1] * zoom, transform: `translate(${pan[0]}px,${pan[1]}px)` }}><canvas ref={scene} /><canvas className="author-overlay" ref={overlay} onPointerDown={down} onPointerMove={move} onPointerUp={up} /></div></div></div></div>;
 }
