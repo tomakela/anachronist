@@ -2,7 +2,12 @@
   "name": "anachronist",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "editor"
+  ],
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "editor:dev": "npm run dev --workspace editor",
+    "editor:build": "npm run build --workspace editor"
   }
 }
