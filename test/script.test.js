@@ -723,6 +723,18 @@ test("walk paths route around masked obstacles", () => {
   assert.ok(route.every(walkable));
 });
 
+test("walk paths go directly toward an unobstructed destination", () => {
+  const route = findWalkPath([0, 0], [4, 3], () => true, 5, 5);
+  assert.deepEqual(route, [[4, 3]]);
+});
+
+test("walk paths can move diagonally around obstacles without cutting corners", () => {
+  const blocked = new Set(["1,0"]);
+  const walkable = ([x, y]) => !blocked.has(`${Math.floor(x)},${Math.floor(y)}`);
+  const route = findWalkPath([0, 0], [2, 1], walkable, 3, 2);
+  assert.deepEqual(route, [[0, 1], [1, 1], [2, 1]]);
+});
+
 test("walk paths choose the closest reachable point for a disallowed click", () => {
   const walkable = ([x]) => x < 2;
   const route = findWalkPath([0, 2], [4, 2], walkable, 5, 5);

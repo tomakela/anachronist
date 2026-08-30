@@ -96,8 +96,24 @@ export function advanceWalk(position, target, speed, multiplier, walkable, visit
  * to it instead. The returned route excludes the starting point.
  */
 export function findWalkPath(position, target, walkable, width, height) {
-  const start = [Math.max(0, Math.min(width - 1, Math.round(position[0]))), Math.max(0, Math.min(height - 1, Math.round(position[1])))];
+  const bounded = Number.isInteger(width) && width > 0 && Number.isInteger(height) && height > 0;
+  const start = bounded
+    ? [Math.max(0, Math.min(width - 1, Math.round(position[0]))), Math.max(0, Math.min(height - 1, Math.round(position[1])))]
+    : [Math.round(position[0]), Math.round(position[1])];
   const goal = [Math.round(target[0]), Math.round(target[1])];
+  const inside = ([x, y]) => !bounded || (x >= 0 && y >= 0 && x < width && y < height);
+  const straightRouteIsWalkable = () => {
+    if (!goal.every(Number.isFinite) || !inside(goal)) return false;
+    const dx = goal[0] - start[0], dy = goal[1] - start[1], samples = Math.max(Math.abs(dx), Math.abs(dy));
+    for (let step = 1; step <= samples; step++) {
+      if (!walkable([start[0] + dx * step / samples, start[1] + dy * step / samples])) return false;
+    }
+    return true;
+  };
+  // Do not turn an unobstructed walk into a grid-shaped route. Apart from
+  // looking natural, one direct waypoint preserves the requested heading.
+  if (straightRouteIsWalkable()) return start[0] === goal[0] && start[1] === goal[1] ? [] : [goal];
+  if (!bounded) return [];
   const index = ([x, y]) => y * width + x;
   const points = [[...start]], parents = new Int32Array(width * height).fill(-1);
   const visited = new Uint8Array(width * height); visited[index(start)] = 1;
@@ -107,11 +123,14 @@ export function findWalkPath(position, target, walkable, width, height) {
     const point = points[head++], distance = distanceToGoal(point);
     if (distance < bestDistance) { best = point; bestDistance = distance; }
     if (distance === 0) { best = point; break; }
-    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+    for (const [dx, dy] of [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]) {
       const next = [point[0] + dx, point[1] + dy];
-      if (next[0] < 0 || next[1] < 0 || next[0] >= width || next[1] >= height) continue;
+      if (!inside(next)) continue;
       const nextIndex = index(next);
       if (visited[nextIndex] || !walkable(next)) continue;
+      // A diagonal may not squeeze through the touching corners of two
+      // blocked pixels, since the actor's continuous path crosses that corner.
+      if (dx && dy && (!walkable([point[0] + dx, point[1]]) || !walkable([point[0], point[1] + dy]))) continue;
       visited[nextIndex] = 1; parents[nextIndex] = index(point); points.push(next);
     }
   }
