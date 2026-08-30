@@ -32,7 +32,11 @@ export class FileSystemProjectAdapter implements ProjectAdapter {
     const entries: ProjectEntry[] = [];
     this.files.clear();
     const visit = async (directory: DirectoryHandle, prefix = "") => {
-      for await (const [name, handle] of directory.entries()) {
+      const handles = directory.values
+        ? directory.values()
+        : (async function* () { for await (const [, handle] of directory.entries()) yield handle; })();
+      for await (const handle of handles) {
+        const { name } = handle;
         if (name.startsWith(".")) continue;
         const path = `${prefix}${name}`;
         entries.push({ path, name, kind: handle.kind });
@@ -45,8 +49,8 @@ export class FileSystemProjectAdapter implements ProjectAdapter {
   }
   private async existingFile(path: string) {
     const normalized = projectPath(path).join("/");
-    const handle = this.files.get(normalized);
-    if (!handle) throw new Error(`File not found in the selected project: ${normalized}`);
+    const handle = this.files.get(normalized) || await fileHandle(this.root, normalized);
+    this.files.set(normalized, handle);
     return handle;
   }
   async readText(path: string) { const file = await (await this.existingFile(path)).getFile(); return { content: await file.text(), lastModified: file.lastModified }; }
@@ -76,4 +80,29 @@ export class UploadProjectAdapter implements ProjectAdapter {
   async readBlob(path: string) { const file = this.files.get(path); if (!file) throw new Error(`File not found: ${path}`); return file; }
   async writeText(path: string, content: string) { const blob = new Blob([content], { type: "text/plain" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = path.split("/").at(-1)!; link.click(); URL.revokeObjectURL(link.href); return undefined; }
   async currentModified(path: string) { return this.files.get(path)?.lastModified; }
+}
+
+/** Reads the repository-local game exposed by the Vite development server. */
+export class DevelopmentGameProjectAdapter implements ProjectAdapter {
+  readonly writable = false;
+  readonly name = "Anachronist demo game";
+  async listFiles() {
+    const paths = await fetch("/__anachronist-game/entries").then(response => {
+      if (!response.ok) throw new Error("The development game files are unavailable.");
+      return response.json() as Promise<string[]>;
+    });
+    return paths.map(path => ({ path, name: path.split("/").at(-1)!, kind: "file" as const }));
+  }
+  async readText(path: string) {
+    const response = await fetch(`/__anachronist-game/file?path=${encodeURIComponent(path)}`);
+    if (!response.ok) throw new Error(`File not found: ${path}`);
+    return { content: await response.text() };
+  }
+  async readBlob(path: string) {
+    const response = await fetch(`/__anachronist-game/file?path=${encodeURIComponent(path)}`);
+    if (!response.ok) throw new Error(`File not found: ${path}`);
+    return response.blob();
+  }
+  async writeText(): Promise<number | undefined> { throw new Error("The development game fallback is read-only."); }
+  async currentModified() { return undefined; }
 }

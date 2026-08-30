@@ -15,7 +15,8 @@ export class EditorProjectService extends EventTarget {
   async openPackageDirectory(adapter: ProjectAdapter) {
     if (this.hasDirtyDocuments && !confirm("Discard unsaved changes and open another project?")) return false;
     const allEntries = await adapter.listFiles();
-    const gameFiles = allEntries.filter(entry => entry.kind === "file" && /(^|\/)game\.ini$/.test(entry.path));
+    await this.discoverConfigurationFiles(adapter, allEntries);
+    const gameFiles = allEntries.filter(entry => entry.kind === "file" && /(^|\/)game\.ini$/i.test(entry.path));
     const packageEntry = gameFiles.find(entry => entry.path === "game.ini")
       || (gameFiles.length === 1 ? gameFiles[0] : undefined);
     const packageRoot = packageEntry?.path.slice(0, -"game.ini".length) || "";
@@ -46,7 +47,7 @@ export class EditorProjectService extends EventTarget {
   }
   async languageContext(path: string): Promise<{ compileContext: Record<string, unknown>; index: CompletionIndex }> {
     if (!this.adapter) return { compileContext: { path }, index: { rooms: [], entities: [], spawns: [], items: [], graphics: [], animations: [], verbs: [], protocol: [], states: [] } };
-    const iniPaths = this.entries.filter(entry => entry.kind === "file" && entry.path.endsWith(".ini")).map(entry => entry.path);
+    const iniPaths = this.entries.filter(entry => entry.kind === "file" && /\.ini$/i.test(entry.path)).map(entry => entry.path);
     const parsed = new Map<string, any>();
     await Promise.all(iniPaths.map(async iniPath => { try { const open = this.documents.get(iniPath); parsed.set(iniPath, parseIniDocument(open?.content ?? (await this.adapter!.readText(iniPath)).content, iniPath).value); } catch { /* incomplete files do not prevent completion */ } }));
     const sections = [...parsed.values()].flatMap(value => Object.keys(value));
@@ -70,5 +71,30 @@ export class EditorProjectService extends EventTarget {
   async checkExternalModifications() { if (!this.adapter) return []; const changed: EditorDocument[] = []; for (const document of this.openDocuments) { const stamp = await this.adapter.currentModified(document.path); if (stamp && document.lastModified && stamp !== document.lastModified) { document.externallyModified = true; changed.push(document); } } if (changed.length) this.changed(true); return changed; }
   closeProject() { if (this.hasDirtyDocuments && !confirm("Close this project and discard unsaved changes?")) return false; this.adapter?.close?.(); this.adapter = undefined; this.documents.clear(); this.entries = []; this.changed(true); return true; }
   private require(path: string) { const document = this.documents.get(path); if (!document) throw new Error(`Document is not open: ${path}`); return document; }
+  private async discoverConfigurationFiles(adapter: ProjectAdapter, entries: ProjectEntry[]) {
+    if (entries.some(entry => entry.kind === "file" && /\.ini$/i.test(entry.path))) return;
+    const known = new Set(entries.filter(entry => entry.kind === "directory").map(entry => `${entry.path}/game.ini`));
+    known.add("game.ini");
+    const packageRoots = new Set<string>();
+    const checked = new Set<string>();
+    while (known.size) {
+      const path = known.values().next().value as string;
+      known.delete(path);
+      if (checked.has(path)) continue;
+      checked.add(path);
+      try {
+        const content = (await adapter.readText(path)).content;
+        entries.push({ path, name: path.split("/").at(-1)!, kind: "file" });
+        const base = path.endsWith("game.ini") ? path.slice(0, -"game.ini".length) : path.slice(0, path.lastIndexOf("/") + 1);
+        if (path.endsWith("game.ini")) packageRoots.add(base);
+        const value = parseIniDocument(content, path).value;
+        for (const section of Object.values(value) as Record<string, unknown>[]) for (const reference of Object.values(section)) {
+          if (typeof reference !== "string" || !/\.ini$/i.test(reference)) continue;
+          for (const root of packageRoots.size ? packageRoots : [base]) known.add(`${root}${reference}`.replaceAll("//", "/"));
+          known.add(`${base}${reference}`.replaceAll("//", "/"));
+        }
+      } catch { /* The candidate is not present or is not an INI document. */ }
+    }
+  }
   private changed(contentChanged = false) { if (contentChanged) this.contentRevision++; this.dispatchEvent(new Event("change")); }
 }
