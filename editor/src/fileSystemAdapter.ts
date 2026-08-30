@@ -34,6 +34,7 @@ export class FileSystemProjectAdapter implements ProjectAdapter {
     return entries.sort((a, b) => a.path.localeCompare(b.path));
   }
   async readText(path: string) { const file = await (await fileHandle(this.root, path)).getFile(); return { content: await file.text(), lastModified: file.lastModified }; }
+  async readBlob(path: string) { return (await fileHandle(this.root, path)).getFile(); }
   async writeText(path: string, content: string) { const handle = await fileHandle(this.root, path, true); const stream = await handle.createWritable(); await stream.write(content); await stream.close(); return (await handle.getFile()).lastModified; }
   async currentModified(path: string) { return (await (await fileHandle(this.root, path)).getFile()).lastModified; }
 }
@@ -49,6 +50,7 @@ export class UploadProjectAdapter implements ProjectAdapter {
   }
   async listFiles() { return [...this.files.keys()].map(path => ({ path, name: path.split("/").at(-1)!, kind: "file" as const })); }
   async readText(path: string) { const file = this.files.get(path); if (!file) throw new Error(`File not found: ${path}`); return { content: await file.text(), lastModified: file.lastModified }; }
+  async readBlob(path: string) { const file = this.files.get(path); if (!file) throw new Error(`File not found: ${path}`); return file; }
   async writeText(path: string, content: string) { const blob = new Blob([content], { type: "text/plain" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = path.split("/").at(-1)!; link.click(); URL.revokeObjectURL(link.href); return undefined; }
   async currentModified(path: string) { return this.files.get(path)?.lastModified; }
 }

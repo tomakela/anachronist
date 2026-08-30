@@ -20,6 +20,7 @@ export interface ProjectAdapter {
   readonly name: string;
   listFiles(): Promise<ProjectEntry[]>;
   readText(path: string): Promise<{ content: string; lastModified?: number }>;
+  readBlob?(path: string): Promise<Blob>;
   writeText(path: string, content: string): Promise<number | undefined>;
   currentModified(path: string): Promise<number | undefined>;
   close?(): void;
