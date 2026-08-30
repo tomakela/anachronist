@@ -90,6 +90,39 @@ export function advanceWalk(position, target, speed, multiplier, walkable, visit
   return { point, reached: point[0] === target[0] && point[1] === target[1], blocked: false };
 }
 
+/**
+ * Find a pixel-accurate route through a walk mask. If the requested point is
+ * outside the connected walkable area, route to the reachable point nearest
+ * to it instead. The returned route excludes the starting point.
+ */
+export function findWalkPath(position, target, walkable, width, height) {
+  const start = [Math.max(0, Math.min(width - 1, Math.round(position[0]))), Math.max(0, Math.min(height - 1, Math.round(position[1])))];
+  const goal = [Math.round(target[0]), Math.round(target[1])];
+  const index = ([x, y]) => y * width + x;
+  const points = [[...start]], parents = new Int32Array(width * height).fill(-1);
+  const visited = new Uint8Array(width * height); visited[index(start)] = 1;
+  let head = 0, best = start, bestDistance = Infinity;
+  const distanceToGoal = ([x, y]) => (x - goal[0]) ** 2 + (y - goal[1]) ** 2;
+  while (head < points.length) {
+    const point = points[head++], distance = distanceToGoal(point);
+    if (distance < bestDistance) { best = point; bestDistance = distance; }
+    if (distance === 0) { best = point; break; }
+    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+      const next = [point[0] + dx, point[1] + dy];
+      if (next[0] < 0 || next[1] < 0 || next[0] >= width || next[1] >= height) continue;
+      const nextIndex = index(next);
+      if (visited[nextIndex] || !walkable(next)) continue;
+      visited[nextIndex] = 1; parents[nextIndex] = index(point); points.push(next);
+    }
+  }
+  const route = [];
+  for (let current = index(best), startIndex = index(start); current !== startIndex;) {
+    if (current < 0) return [];
+    route.push([current % width, Math.floor(current / width)]); current = parents[current];
+  }
+  return route.reverse();
+}
+
 /** Mark only the current explicitly skippable scene for safe acceleration. */
 export function accelerateCommandQueue(queue) {
   const skipping = queue[0]?.skippable === true;

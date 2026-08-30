@@ -89,8 +89,9 @@ is drawn first, and when the player is below Y the player is drawn first. Set `i
 decorative entities that should be drawn but ignored by pointing and verbs. A
 room may also name a bitmap with `walk_mask`; only
 its opaque, non-black pixels permit player movement (the mask is scaled to the
-logical room size). A walk stops at the first step that would enter a masked-out
-pixel. Whenever an item is picked up, the inventory automatically moves to its
+logical room size). Player walks find a route around masked-out pixels. Clicking
+outside the walkable area instead routes to its closest reachable point.
+Whenever an item is picked up, the inventory automatically moves to its
 last row so the new item is visible. Items granted together when entering a room
 do not advance the inventory, so a starting inventory is shown from the first
 row.
