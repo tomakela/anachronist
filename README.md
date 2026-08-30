@@ -65,7 +65,10 @@ configured `input.long_touch_move_tolerance` do not cancel a long touch. The
 verb and inventory panels are UI only: touching their unused space never starts
 walking or displays “Walk to”.
 Room `player_scaling` perspective stops scale the actor according to its y
-position, with linear interpolation between two or more `y,scale` pairs. Taking
+position, with linear interpolation between two or more `y,scale` pairs. Using
+the same format, optional `player_walk_speed_scaling` stops independently scale
+walking speed by y-position; this lets distant actors move more slowly without
+forcing speed to follow the more dramatic visual scale. Taking
 the hall clock now runs a multi-step scene: it disappears from the wall, shakes
 the screen as it falls to the floor, and remains fallen after a round trip to
 the garden. Scripts start the effect with `shake N ticks;`, while the game

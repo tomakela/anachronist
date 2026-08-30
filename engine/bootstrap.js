@@ -144,11 +144,12 @@ export class Runtime extends DeterministicVM {
     // Derive everything which can throw before assigning a single live field.
     const room = this.rooms[state.room], interactive = room.room.interactive !== "false", interfaceVisible = room.room.interface_visible !== "false" && room.room.fullscreen !== "true";
     const playerScaling = parseScalingStops(room.room.player_scaling || "0,1; 1,1", `${state.room}.room.player_scaling`);
+    const playerWalkSpeedScaling = parseScalingStops(room.room.player_walk_speed_scaling || "0,1; 1,1", `${state.room}.room.player_walk_speed_scaling`);
     const mask = room.room.walk_mask;
     const walkable = mask ? bitmapWalkRegion(this.bitmaps[mask], this.width, this.height) : () => true;
     const triggers = Object.fromEntries(Object.entries(room).filter(([section]) => section.startsWith("trigger.")).map(([section, values]) => [section.slice(8), tuple(values.rect, 4, `${section}.rect`)]));
     const occupiedTriggers = enteredTriggers(state.entities[state.room].player.position, triggers).occupied;
-    Object.assign(this, { room: state.room, roomEntities: state.entities, entities: state.entities[state.room], globals: state.globals, roomState: state.roomState, inventory: state.inventory, inventoryEntities: state.inventoryEntities, inventoryRow: state.inventoryRow, interactive, interfaceVisible, playerScaling, walkable, triggers, occupiedTriggers });
+    Object.assign(this, { room: state.room, roomEntities: state.entities, entities: state.entities[state.room], globals: state.globals, roomState: state.roomState, inventory: state.inventory, inventoryEntities: state.inventoryEntities, inventoryRow: state.inventoryRow, interactive, interfaceVisible, playerScaling, playerWalkSpeedScaling, walkable, triggers, occupiedTriggers });
     this.queue = []; this.message = ""; this.messageKind = ""; this.messageTicks = 0; this.actionSentence = ""; this.clearSelection(); this.hoverTarget = null;
   }
   restartGame() { if (window.confirm("Restart and discard all current progress?")) window.location.reload(); }

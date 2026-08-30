@@ -602,6 +602,19 @@ test("room perspective scaling interpolates and clamps between y stops", () => {
   assert.throws(() => parseScalingStops("100,1"), /at least two stops/);
 });
 
+test("player walking speed uses its independent room perspective curve", () => {
+  const vm = Object.create(DeterministicVM.prototype);
+  Object.assign(vm, {
+    tick: 0, shakeTicks: 0, message: "", queue: [{ op: "walk", actor: "player", point: [20, 70] }],
+    entities: { player: { id: "player", position: [0, 70], actionTicks: 0 } },
+    game: { protocol: { player_actor: "player" } }, walkSpeed: 2, fastWalkMultiplier: 3.5,
+    playerWalkSpeedScaling: parseScalingStops("70,0.8; 120,1"), walkable: () => true,
+    backgroundTasks: { step() {} }, updateTriggers() {}
+  });
+  vm.step();
+  assert.deepEqual(vm.entities.player.position, [1.6, 70]);
+});
+
 test("entities use explicit z values and type defaults for back-to-front ordering", () => {
   const entities = {
     player: { id: "player", position: [0, 10] }, foreground: { id: "foreground", position: [0, 0], z: "150" },
