@@ -9,11 +9,46 @@ import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, ente
 
 const root = typeof document === "undefined" ? null : document.querySelector("#engine-host");
 const entry = typeof document === "undefined" ? null : document.querySelector('meta[name="game-entry"]')?.content;
-const fetchText = async (path) => { const response = await fetch(path); if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`); return response.text(); };
+export const debugModeFromSearch = (search) => new URLSearchParams(search).has("debug");
+
+export function overlayIni(base, override) {
+  const merged = Object.create(null);
+  Object.defineProperty(merged, "$variables", { value: { ...base.$variables, ...override.$variables }, enumerable: false });
+  for (const key of new Set([...Object.keys(base), ...Object.keys(override)])) {
+    const normal = base[key], debug = override[key];
+    merged[key] = normal && debug && typeof normal === "object" && typeof debug === "object"
+      ? { ...normal, ...debug }
+      : (debug ?? normal);
+  }
+  return merged;
+}
+
+export const siblingPath = (path, name) => `${path.slice(0, path.lastIndexOf("/") + 1)}${name}`;
+export const debugUrl = (url, enabled) => {
+  const result = new URL(url);
+  if (enabled) result.searchParams.set("debug", ""); else result.searchParams.delete("debug");
+  return result.href;
+};
+export const fetchText = async (path, fetcher = fetch) => { const response = await fetcher(path); if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`); return response.text(); };
+export const fetchOptionalText = async (path, fetcher = fetch) => { const response = await fetcher(path); if (response.status === 404) return null; if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`); return response.text(); };
+
+export async function compileRoomScripts(scriptPath, roomIniPath, context, debugMode, fetcher = fetch, compiler = compile) {
+  const handlers = compiler(await fetchText(scriptPath, fetcher), context);
+  if (debugMode) {
+    const debugPath = siblingPath(roomIniPath, "debug.ana"), source = await fetchOptionalText(debugPath, fetcher);
+    if (source !== null) handlers.push(...compiler(source, context));
+  }
+  return handlers;
+}
 
 async function boot() {
-  const game = parseIni(await fetchText(entry), entry);
+  const debugMode = debugModeFromSearch(window.location.search);
+  let game = parseIni(await fetchText(entry), entry);
   const base = entry.slice(0, entry.lastIndexOf("/") + 1);
+  if (debugMode) {
+    const debugPath = siblingPath(entry, "debug.ini"), source = await fetchOptionalText(debugPath);
+    if (source !== null) game = overlayIni(game, parseIni(source, debugPath));
+  }
   const resourceCataloguePath = resolvePackagePath(base, game.package.resource_catalogue);
   const resourceBase = resourceCataloguePath.slice(0, resourceCataloguePath.lastIndexOf("/") + 1);
   const resources = parseIni(await fetchText(resourceCataloguePath));
@@ -28,9 +63,10 @@ async function boot() {
   const rooms = Object.create(null);
   for (const id of list(roomsIndex.catalogue.rooms)) {
     const spec = roomsIndex[`room.${id}`];
-    rooms[id] = parseIni(await fetchText(resolvePackagePath(base, spec.path)));
+    const roomIniPath = resolvePackagePath(base, spec.path);
+    rooms[id] = parseIni(await fetchText(roomIniPath));
     const entities = Object.keys(rooms[id]).filter((section) => section.startsWith("entity.")).map((section) => section.slice(7));
-    handlers.push(...compile(await fetchText(resolvePackagePath(base, spec.script)), { roomId: id, entities }));
+    handlers.push(...await compileRoomScripts(resolvePackagePath(base, spec.script), roomIniPath, { roomId: id, entities }, debugMode));
   }
   const items = Object.create(null);
   if (game.package.item_catalogue) {
@@ -42,13 +78,13 @@ async function boot() {
       if (script) handlers.push(...compile(await fetchText(resolvePackagePath(itemBase, script)), { itemId: id }));
     }
   }
-  new Runtime(game, ui, rooms, items, graphics, animations, bitmaps, handlers, input).start();
+  new Runtime(game, ui, rooms, items, graphics, animations, bitmaps, handlers, input, debugMode).start();
 }
 
 export class Runtime extends DeterministicVM {
-  constructor(game, ui, rooms, items, graphics, animations, bitmaps, handlers, input) {
+  constructor(game, ui, rooms, items, graphics, animations, bitmaps, handlers, input, debugMode = false) {
     super();
-    Object.assign(this, { game, ui, rooms, items, graphics, animations, bitmaps, handlers, input });
+    Object.assign(this, { game, ui, rooms, items, graphics, animations, bitmaps, handlers, input, debugMode });
     this.saveIdentity = { packageId: game.package.id, formatVersion: game.save?.format_version };
     if (!this.saveIdentity.packageId || !this.saveIdentity.formatVersion) throw new Error("package.id and save.format_version are required");
     this.storage = new SaveStorage(window.localStorage, this.saveIdentity.packageId);
@@ -107,9 +143,12 @@ export class Runtime extends DeterministicVM {
   cancelInteraction() { this.clearSelection(); this.interruptCommands(); if (this.message) this.dismissMessage(); this.actionSentence = ""; }
   settings() {
     const wrapper = document.createElement("div"); wrapper.className = "mobile-settings";
-    const button = document.createElement("button"); button.type = "button"; button.textContent = "☰"; button.ariaLabel = "Game menu"; button.ariaExpanded = "false";
+    const button = document.createElement("button"); button.type = "button"; button.textContent = "⚙"; button.ariaLabel = "Game settings"; button.ariaExpanded = "false";
     const choices = document.createElement("fieldset"); choices.hidden = true;
-    const legend = document.createElement("legend"); legend.textContent = "Touch cursor"; choices.append(legend);
+    const legend = document.createElement("legend"); legend.textContent = "Game settings"; choices.append(legend);
+    const debugRow = document.createElement("label"), debug = document.createElement("input"); debug.type = "checkbox"; debug.checked = this.debugMode;
+    debug.addEventListener("change", () => { window.location.href = debugUrl(window.location.href, debug.checked); });
+    debugRow.append(debug, " Debug mode"); choices.append(debugRow);
     for (const [value, label] of [["direct", "Point where I touch"], ["drag", "Drag cursor"]]) {
       const row = document.createElement("label"), radio = document.createElement("input"); radio.type = "radio"; radio.name = "cursor-mode"; radio.value = value; radio.checked = this.cursorMode === value;
       radio.addEventListener("change", () => { this.cursorMode = value; localStorage.setItem("anachronist.cursor-mode", value); });
