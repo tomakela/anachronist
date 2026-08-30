@@ -1,24 +1,44 @@
 const TOKEN = /(?:([ \t\r]+)|(\/\/[^\n]*)|(\n)|("(?:\\.|[^"\\])*")|(-?\d+)|([A-Za-z_][\w.]*)|(==|!=|<=|>=|&&|\|\||[{}(),=!<>+\-*\/])|(;))/gy;
 
-function lex(source) {
+const scriptPosition = (source, offset) => {
+  const lines = source.slice(0, offset).split("\n");
+  return { line: lines.length, column: lines.at(-1).length + 1, offset };
+};
+const scriptRange = (source, start, end) => ({ start: scriptPosition(source, start), end: scriptPosition(source, end) });
+
+export class ScriptDiagnosticError extends Error {
+  constructor(diagnostic) { super(`${diagnostic.path}:${diagnostic.line}: ${diagnostic.message}`); this.name = "ScriptDiagnosticError"; this.diagnostic = diagnostic; }
+}
+
+function lex(source, path = "<script>") {
   const tokens = [];
   for (let offset = 0; offset < source.length;) {
     TOKEN.lastIndex = offset;
     const match = TOKEN.exec(source);
-    if (!match) throw new Error(`script:${source.slice(0, offset).split("\n").length}: invalid token`);
+    if (!match) throw new ScriptDiagnosticError(makeScriptDiagnostic(source, path, offset, offset + 1, "script-invalid-token", "invalid token"));
+    const start = offset;
     offset = TOKEN.lastIndex;
     if (match[1] || match[2]) continue;
-    if (match[8]) throw new Error(`script:${source.slice(0, offset).split("\n").length}: semicolons are invalid`);
-    tokens.push(match[3] ? { type: "newline", value: "\n" } :
+    if (match[8]) throw new ScriptDiagnosticError(makeScriptDiagnostic(source, path, start, offset, "script-semicolon", "semicolons are invalid"));
+    const token = match[3] ? { type: "newline", value: "\n" } :
       match[4] ? { type: "string", value: JSON.parse(match[4]) } :
       match[5] ? { type: "number", value: Number(match[5]) } :
-      { type: "token", value: match[6] || match[7] });
+      { type: "token", value: match[6] || match[7] };
+    tokens.push({ ...token, raw: match[0], range: scriptRange(source, start, offset) });
   }
   return tokens;
 }
 
-export function compile(source, compileContext = {}) {
-  const t = lex(source); let p = 0;
+const makeScriptDiagnostic = (source, path, start, end, code, message, severity = "error") => {
+  const range = scriptRange(source, start, end), line = range.start.line, column = range.start.column;
+  return { path, filePath: path, line, column, range, severity, code, message };
+};
+
+export const tokenizeScript = (source, path = "<script>") => lex(source, path);
+
+function compileRuntime(source, compileContext = {}) {
+  const path = compileContext.path || compileContext.url || "<script>";
+  const t = lex(source, path); let p = 0;
   const peek = (value) => t[p]?.value === value;
   const take = (value) => { const token = t[p++]; if (!token || (value && token.value !== value)) throw new Error(`script: expected ${value || "token"}`); return token; };
   const newlines = () => { while (peek("\n")) take(); };
@@ -95,11 +115,83 @@ export function compile(source, compileContext = {}) {
       if (compileContext.entities && !compileContext.entities.includes(entity)) throw new Error(`script: unknown local entity ${entity}`);
       event = `entity.${action}`; localTarget = entity; args.push("target");
     }
-    handlers.push({ event, args, body: block(), skippable, tasks, ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(compileContext.itemId ? { itemId: compileContext.itemId } : {}), ...(inventoryOnly ? { inventoryOnly: true } : {}), ...(localTarget ? { localTarget } : {}) });
+    handlers.push({ event, declaredEvent, args, body: block(), skippable, tasks, ...(compileContext.roomId ? { roomId: compileContext.roomId } : {}), ...(compileContext.itemId ? { itemId: compileContext.itemId } : {}), ...(inventoryOnly ? { inventoryOnly: true } : {}), ...(localTarget ? { localTarget } : {}) });
     newlines();
   }
   for (const task of Object.values(tasks)) task.tasks = tasks;
   return handlers;
+}
+
+/** Editor-facing compilation result. It never throws syntax errors. */
+export function compileScript(source, compileContext = {}) {
+  const path = compileContext.path || compileContext.url || "<script>";
+  let tokens;
+  try {
+    tokens = lex(source, path);
+    const handlers = compileRuntime(source, compileContext);
+    const declarations = declarationSyntax(tokens);
+    const syntax = {
+      type: "Script", path, source, tokens, range: scriptRange(source, 0, source.length),
+      handlers: handlers.map((handler, index) => ({
+        type: "HandlerDeclaration", event: handler.event, declaredEvent: handler.declaredEvent || handler.event,
+        target: handler.localTarget, arguments: handler.args, commands: handler.body,
+        range: declarations.handlers[index]?.range, eventRange: declarations.handlers[index]?.nameRange,
+        argumentRanges: declarations.handlers[index]?.argumentRanges || [],
+        commandRanges: declarations.handlers[index]?.commandRanges || [],
+        stateReferences: collectStateReferences(handler.body)
+      })),
+      tasks: declarations.tasks
+    };
+    return { handlers, tokens, syntax, diagnostics: [] };
+  } catch (error) {
+    if (error instanceof ScriptDiagnosticError) return { handlers: [], tokens: tokens || [], syntax: null, diagnostics: [error.diagnostic] };
+    const token = tokens?.find((candidate) => candidate.range.start.offset >= source.length) || tokens?.at(-1);
+    const start = token?.range.start.offset ?? 0, end = token?.range.end.offset ?? start;
+    const message = String(error.message).replace(/^script:\s*/, "");
+    return { handlers: [], tokens: tokens || [], syntax: null,
+      diagnostics: [makeScriptDiagnostic(source, path, start, end, "script-syntax-error", message)] };
+  }
+}
+
+const COMMAND_WORDS = new Set(["sequence", "loop", "if", "walk", "say", "narrate", "take", "show", "hide", "enable", "disable", "remove", "replace", "enter", "set", "wait", "await", "shake", "spawn", "face"]);
+function declarationSyntax(tokens) {
+  const handlers = [], tasks = [];
+  for (let i = 0, depth = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.value === "{") depth++;
+    if (token.value === "}") depth--;
+    if (depth !== 0 || !["on", "task"].includes(token.value)) continue;
+    const kind = token.value, name = tokens[i + 1];
+    let open = i + 2; while (open < tokens.length && tokens[open].value !== "{") open++;
+    let close = open, nested = 0;
+    for (; close < tokens.length; close++) { if (tokens[close].value === "{") nested++; if (tokens[close].value === "}" && --nested === 0) break; }
+    const argumentRanges = [];
+    for (let j = i + 2; j < open; j++) if (tokens[j].type === "token" && !["(", ")", ",", "skippable"].includes(tokens[j].value)) argumentRanges.push(tokens[j].range);
+    const commandRanges = [];
+    for (let j = open + 1; j < close; j++) if (COMMAND_WORDS.has(tokens[j].value)) commandRanges.push({ command: tokens[j].value, range: tokens[j].range });
+    const node = { type: kind === "on" ? "HandlerDeclaration" : "TaskDeclaration", name: name?.value,
+      range: { start: token.range.start, end: (tokens[close] || tokens.at(-1) || token).range.end }, nameRange: name?.range, argumentRanges, commandRanges };
+    (kind === "on" ? handlers : tasks).push(node);
+    i = close;
+  }
+  return { handlers, tasks };
+}
+
+const collectStateReferences = (body, found = []) => {
+  const expression = (node) => { if (!node) return; if (node.kind === "name" && node.value.includes(".")) found.push(node.value); expression(node.left); expression(node.right); };
+  for (const command of body || []) {
+    if (typeof command.target === "string" && command.target.includes(".")) found.push(command.target);
+    expression(command.test); expression(command.value); for (const arg of command.args || []) expression(arg);
+    collectStateReferences(command.body, found); collectStateReferences(command.yes, found); collectStateReferences(command.no, found);
+  }
+  return found;
+};
+
+/** Runtime-compatible strict compiler. */
+export function compile(source, compileContext = {}) {
+  const result = compileScript(source, compileContext);
+  if (result.diagnostics.length) throw new ScriptDiagnosticError(result.diagnostics[0]);
+  return result.handlers;
 }
 
 const evaluate = (expr, context) => expr.kind === "literal" ? expr.value : expr.kind === "name" ?
