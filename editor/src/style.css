@@ -16,3 +16,12 @@ nav { padding: 6px; overflow: auto; height: calc(100% - 37px); }.file { display:
 dl { padding: 5px 14px; font-size: 13px; }dt { color: #727d90; margin-top: 18px; }dd { margin: 5px 0; color: #c6cdd8; overflow-wrap: anywhere; }.saved { color: #7fc99b; }.changed { color: #e2b66f; }
 footer { grid-column: 1 / -1; background: #161a22; border-top: 1px solid #303746; }.bottom-tabs { height: 35px; display: flex; align-items: center; gap: 24px; padding: 0 13px; border-bottom: 1px solid #292f3c; font-size: 11px; color: #9aa4b5; }.bottom-tabs b:nth-child(2) { color: #e2bc7d; border-bottom: 2px solid #d2a45d; height: 35px; padding-top: 11px; }.bottom-tabs span { margin-left: auto; color: #7fc99b; }footer pre { margin: 0; padding: 12px 15px; color: #9ea8b8; font: 12px ui-monospace, monospace; white-space: pre-wrap; }
 @media (max-width: 850px) { .app { grid-template-columns: 200px 1fr; }.inspector { display: none; } }
+.playtest-document { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.playtest-tools { min-height: 42px; display: flex; gap: 7px; align-items: center; padding: 6px 10px; background: #1a1f29; border-bottom: 1px solid #303746; }
+.playtest-tools button, .playtest-tools select { background: #272d3a; color: #d4dbe5; border: 1px solid #3a4355; border-radius: 4px; padding: 5px 8px; }
+.playtest-tools span { margin-left: auto; font-size: 12px; }.playtest-tools .stale { color: #ffbd69; font-weight: 600; }.playtest-tools .fresh { color: #7fc99b; }
+.playtest-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
+.engine-preview { min-width: 0; min-height: 0; display: grid; place-items: center; overflow: hidden; background: #080a0e; position: relative; }
+.engine-preview canvas { max-width: 100%; max-height: 100%; image-rendering: pixelated; }.engine-preview .mobile-settings { display: none; }
+.debugger { overflow: auto; border-left: 1px solid #303746; background: #151922; }.debug-summary { display: flex; justify-content: space-between; padding: 10px 12px; color: #d2a45d; border-bottom: 1px solid #303746; }
+.debugger details { border-bottom: 1px solid #292f3c; }.debugger summary { cursor: pointer; padding: 8px 12px; color: #aeb7c5; font-size: 12px; }.debugger pre { margin: 0; padding: 8px 12px 12px; color: #91a0b5; font: 11px/1.45 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }

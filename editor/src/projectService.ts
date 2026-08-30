@@ -6,6 +6,7 @@ export class EditorProjectService extends EventTarget {
   private adapter?: ProjectAdapter;
   private documents = new Map<string, EditorDocument>();
   entries: ProjectEntry[] = [];
+  contentRevision = 0;
 
   get openDocuments() { return [...this.documents.values()]; }
   get hasDirtyDocuments() { return this.openDocuments.some(document => document.dirty); }
@@ -13,7 +14,7 @@ export class EditorProjectService extends EventTarget {
 
   async openPackageDirectory(adapter: ProjectAdapter) {
     if (this.hasDirtyDocuments && !confirm("Discard unsaved changes and open another project?")) return false;
-    this.adapter?.close?.(); this.adapter = adapter; this.documents.clear(); this.entries = await adapter.listFiles(); this.changed(); return true;
+    this.adapter?.close?.(); this.adapter = adapter; this.documents.clear(); this.entries = await adapter.listFiles(); this.changed(true); return true;
   }
   async readFile(path: string) {
     const existing = this.documents.get(path); if (existing) return existing;
@@ -27,6 +28,13 @@ export class EditorProjectService extends EventTarget {
     if (open) return open.content;
     if (!this.adapter) throw new Error("Open a package first.");
     return (await this.adapter.readText(path)).content;
+  }
+  async readProjectBlob(path: string) {
+    const open = this.documents.get(path);
+    if (open) return new Blob([open.content]);
+    if (!this.adapter) throw new Error("Open a package first.");
+    if (this.adapter.readBlob) return this.adapter.readBlob(path);
+    return new Blob([(await this.adapter.readText(path)).content]);
   }
   async languageContext(path: string): Promise<{ compileContext: Record<string, unknown>; index: CompletionIndex }> {
     if (!this.adapter) return { compileContext: { path }, index: { rooms: [], entities: [], spawns: [], items: [], graphics: [], animations: [], verbs: [], protocol: [], states: [] } };
@@ -47,11 +55,11 @@ export class EditorProjectService extends EventTarget {
     else if (itemMatch) compileContext.itemId = itemMatch[1];
     return { compileContext, index };
   }
-  update(path: string, content: string) { const document = this.require(path); document.content = content; document.dirty = content !== document.savedContent; this.changed(); }
+  update(path: string, content: string) { const document = this.require(path); document.content = content; document.dirty = content !== document.savedContent; this.changed(true); }
   async saveFile(path: string) { if (!this.adapter) throw new Error("Open a package first."); const document = this.require(path); document.lastModified = await this.adapter.writeText(path, document.content); document.savedContent = document.content; document.dirty = false; document.externallyModified = false; this.changed(); }
   async saveAllFiles() { for (const document of this.openDocuments.filter(item => item.dirty)) await this.saveFile(document.path); }
-  async checkExternalModifications() { if (!this.adapter) return []; const changed: EditorDocument[] = []; for (const document of this.openDocuments) { const stamp = await this.adapter.currentModified(document.path); if (stamp && document.lastModified && stamp !== document.lastModified) { document.externallyModified = true; changed.push(document); } } if (changed.length) this.changed(); return changed; }
-  closeProject() { if (this.hasDirtyDocuments && !confirm("Close this project and discard unsaved changes?")) return false; this.adapter?.close?.(); this.adapter = undefined; this.documents.clear(); this.entries = []; this.changed(); return true; }
+  async checkExternalModifications() { if (!this.adapter) return []; const changed: EditorDocument[] = []; for (const document of this.openDocuments) { const stamp = await this.adapter.currentModified(document.path); if (stamp && document.lastModified && stamp !== document.lastModified) { document.externallyModified = true; changed.push(document); } } if (changed.length) this.changed(true); return changed; }
+  closeProject() { if (this.hasDirtyDocuments && !confirm("Close this project and discard unsaved changes?")) return false; this.adapter?.close?.(); this.adapter = undefined; this.documents.clear(); this.entries = []; this.changed(true); return true; }
   private require(path: string) { const document = this.documents.get(path); if (!document) throw new Error(`Document is not open: ${path}`); return document; }
-  private changed() { this.dispatchEvent(new Event("change")); }
+  private changed(contentChanged = false) { if (contentChanged) this.contentRevision++; this.dispatchEvent(new Event("change")); }
 }
