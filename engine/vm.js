@@ -1,6 +1,6 @@
 import { integer, list, tuple } from "./ini.js";
 import { instantiate, textDuration } from "./script.js";
-import { advanceCutSceneQueue, advanceWalk, bitmapWalkRegion, enteredTriggers, interfacePoint, parseScalingStops, retainedRoomEntities, roomEntryItems, verbSentence } from "./interaction.js";
+import { advanceCutSceneQueue, advanceWalk, bitmapWalkRegion, enteredTriggers, interfacePoint, interpolatedScale, parseScalingStops, retainedRoomEntities, roomEntryItems, verbSentence } from "./interaction.js";
 
 const inside = (x, y, [bx, by, bw, bh]) => x >= bx && y >= by && x < bx + bw && y < by + bh;
 const title = (value) => value[0].toUpperCase() + value.slice(1);
@@ -95,6 +95,7 @@ export class DeterministicVM {
     this.interactive = room.room.interactive !== "false";
     this.interfaceVisible = room.room.interface_visible !== "false" && room.room.fullscreen !== "true";
     this.playerScaling = parseScalingStops(room.room.player_scaling || "0,1; 1,1", `${id}.room.player_scaling`);
+    this.playerWalkSpeedScaling = parseScalingStops(room.room.player_walk_speed_scaling || "0,1; 1,1", `${id}.room.player_walk_speed_scaling`);
     const mask = room.room.walk_mask;
     this.walkable = mask ? bitmapWalkRegion(this.bitmaps[mask], this.width, this.height) : () => true;
     this.entities = retainedRoomEntities(this.roomEntities, id, () => {
@@ -179,7 +180,7 @@ export class DeterministicVM {
     const player = this.entities[this.game.protocol.player_actor];
     if (player?.actionTicks > 0) { if (--player.actionTicks === 0) player.action = null; return; }
     const command = this.queue[0]; if (!command) { this.actionSentence = ""; return; }
-    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const dx = target[0] - actor.position[0], dy = target[1] - actor.position[1]; actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); const result = advanceWalk(actor.position, target, this.walkSpeed, command.fast ? this.fastWalkMultiplier : 1, actor.id === this.game.protocol.player_actor ? this.walkable : () => true, (point) => { if (actor.id === this.game.protocol.player_actor) this.updateTriggers(point); }); actor.position = result.point; actor.moving = !result.reached && !result.blocked; if (result.reached || result.blocked) { actor.moving = false; this.queue.shift(); if (result.blocked) this.actionSentence = ""; } return; }
+    if (command.op === "walk") { const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position; if (!actor || !target) return void this.queue.shift(); const isPlayer = actor.id === this.game.protocol.player_actor, speed = this.walkSpeed * (isPlayer ? interpolatedScale(actor.position[1], this.playerWalkSpeedScaling) : 1); const dx = target[0] - actor.position[0], dy = target[1] - actor.position[1]; actor.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"); const result = advanceWalk(actor.position, target, speed, command.fast ? this.fastWalkMultiplier : 1, isPlayer ? this.walkable : () => true, (point) => { if (isPlayer) this.updateTriggers(point); }); actor.position = result.point; actor.moving = !result.reached && !result.blocked; if (result.reached || result.blocked) { actor.moving = false; this.queue.shift(); if (result.blocked) this.actionSentence = ""; } return; }
     this.queue.shift();
     return this.execute(command);
   }
