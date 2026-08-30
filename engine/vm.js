@@ -102,8 +102,13 @@ export class DeterministicVM {
       for (const [section, values] of Object.entries(room)) if (section.startsWith("entity.")) entities[section.slice(7)] = { id: section.slice(7), ...values, position: tuple(values.position, 2, `${section}.position`) };
       return entities;
     });
-    for (const item of roomEntryItems(room)) if (!this.inventory.includes(item.id)) {
-      this.inventory.push(item.id); this.inventoryEntities[item.id] = { ...item, visible: "false", position: [0, 0] };
+    if (this.roomState[id].visited !== true) {
+      for (const item of roomEntryItems(room)) {
+        if (!this.inventory.includes(item.id)) {
+          this.inventory.push(item.id); this.inventoryEntities[item.id] = { ...item, visible: "false", position: [0, 0] };
+        }
+      }
+      this.roomState[id].visited = true;
     }
     const point = tuple(room[`spawn.${spawn}`].position, 2, "spawn"), actorId = this.protocolValue("player_actor"), player = this.animations.player;
     if (!player?.graphic || !player.size) throw new Error("player graphic and size declarations are required");

@@ -87,9 +87,13 @@ on lamp.use_item(item) {
 
 on fountain.use_item(item) {
     if item == coffee_cup {
-        walk player to fountain
-        replace coffee_cup with water in inventory
-        say "I empty the cold coffee and fill the cup with fountain water."
+        if game.coin_thrown == true {
+            walk player to fountain
+            replace coffee_cup with water in inventory
+            say "I empty the cold coffee and fill the cup with fountain water."
+        } else {
+            say "It does not feel right to take from the fountain before making an offering."
+        }
     } else {
       if item == coin {
         walk player to fountain
