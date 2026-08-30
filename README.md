@@ -11,6 +11,8 @@ The browser host will be the first implementation, but the protocol is intended
 to support native hosts later. The design is specified in:
 
 - [`vm.md`](vm.md) — VM responsibilities, data model, lifecycle, and host protocol;
+- [`vm_api.md`](vm_api.md) — implemented VM functions, methods, command objects,
+  and execution semantics;
 - [`script_language.md`](script_language.md) — the portable adventure scripting
   language; and
 - [`js_engine.md`](js_engine.md) — the HTML5/JavaScript host architecture.
