@@ -14,6 +14,8 @@
     "typescript": "latest",
     "react": "latest",
     "react-dom": "latest",
+    "@monaco-editor/react": "latest",
+    "monaco-editor": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest"
   }
