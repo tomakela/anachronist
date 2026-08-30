@@ -19,6 +19,7 @@ async function fileHandle(root: DirectoryHandle, path: string, create = false) {
 export class FileSystemProjectAdapter implements ProjectAdapter {
   readonly writable = true;
   readonly name: string;
+  private files = new Map<string, FileSystemFileHandle>();
   constructor(private root: DirectoryHandle) { this.name = root.name; }
 
   static async open() {
@@ -29,21 +30,34 @@ export class FileSystemProjectAdapter implements ProjectAdapter {
 
   async listFiles() {
     const entries: ProjectEntry[] = [];
+    this.files.clear();
     const visit = async (directory: DirectoryHandle, prefix = "") => {
       for await (const [name, handle] of directory.entries()) {
         if (name.startsWith(".")) continue;
         const path = `${prefix}${name}`;
         entries.push({ path, name, kind: handle.kind });
         if (handle.kind === "directory") await visit(handle, `${path}/`);
+        else this.files.set(path, handle);
       }
     };
     await visit(this.root);
     return entries.sort((a, b) => a.path.localeCompare(b.path));
   }
-  async readText(path: string) { const file = await (await fileHandle(this.root, path)).getFile(); return { content: await file.text(), lastModified: file.lastModified }; }
-  async readBlob(path: string) { return (await fileHandle(this.root, path)).getFile(); }
-  async writeText(path: string, content: string) { const handle = await fileHandle(this.root, path, true); const stream = await handle.createWritable(); await stream.write(content); await stream.close(); return (await handle.getFile()).lastModified; }
-  async currentModified(path: string) { return (await (await fileHandle(this.root, path)).getFile()).lastModified; }
+  private async existingFile(path: string) {
+    const normalized = projectPath(path).join("/");
+    const handle = this.files.get(normalized);
+    if (!handle) throw new Error(`File not found in the selected project: ${normalized}`);
+    return handle;
+  }
+  async readText(path: string) { const file = await (await this.existingFile(path)).getFile(); return { content: await file.text(), lastModified: file.lastModified }; }
+  async readBlob(path: string) { return (await this.existingFile(path)).getFile(); }
+  async writeText(path: string, content: string) {
+    const normalized = projectPath(path).join("/");
+    const handle = this.files.get(normalized) || await fileHandle(this.root, normalized, true);
+    this.files.set(normalized, handle);
+    const stream = await handle.createWritable(); await stream.write(content); await stream.close(); return (await handle.getFile()).lastModified;
+  }
+  async currentModified(path: string) { return (await (await this.existingFile(path)).getFile()).lastModified; }
 }
 
 /** Read-only directory upload fallback. Saving downloads a replacement file. */
