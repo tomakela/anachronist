@@ -22,6 +22,12 @@ export class EditorProjectService extends EventTarget {
     const document: EditorDocument = { id: path, path, name: path.split("/").at(-1)!, kind: documentKind(path), content, savedContent: content, dirty: false, externallyModified: false, lastModified };
     this.documents.set(path, document); this.changed(); return document;
   }
+  async readProjectText(path: string) {
+    const open = this.documents.get(path);
+    if (open) return open.content;
+    if (!this.adapter) throw new Error("Open a package first.");
+    return (await this.adapter.readText(path)).content;
+  }
   async languageContext(path: string): Promise<{ compileContext: Record<string, unknown>; index: CompletionIndex }> {
     if (!this.adapter) return { compileContext: { path }, index: { rooms: [], entities: [], spawns: [], items: [], graphics: [], animations: [], verbs: [], protocol: [], states: [] } };
     const iniPaths = this.entries.filter(entry => entry.kind === "file" && entry.path.endsWith(".ini")).map(entry => entry.path);

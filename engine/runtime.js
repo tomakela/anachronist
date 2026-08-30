@@ -3,7 +3,8 @@ import { BackgroundTasks, instantiate, textDuration } from "./script.js";
 import { bitmapPixels, nearestNeighbor } from "./bitmaps.js";
 import { SaveStorage, snapshotRuntime, validateSnapshot } from "./save.js";
 import { DeterministicVM } from "./vm.js";
-import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityRenderOrder, entityTargetAt, interfacePoint, interpolatedScale, inventoryLastRow, inventoryPage, objectSuggestedVerb, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
+import { drawEntityBitmap, drawRoomScene, entityBounds } from "./renderer.js";
+import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityRenderOrder, entityTargetAt, interfacePoint, inventoryLastRow, inventoryPage, objectSuggestedVerb, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
 
 export const debugUrl = (url, enabled) => { const result = new URL(url); if (enabled) result.searchParams.set("debug", ""); else result.searchParams.delete("debug"); return result.href; };
 export class Runtime extends DeterministicVM {
@@ -225,21 +226,14 @@ export class Runtime extends DeterministicVM {
   verbSentence(verb, first, second) { return verbSentence(this.ui, (id) => this.label(id), verb, first, second); }
   dismissMessage() { this.message = ""; this.messageTicks = 0; this.messageKind = ""; if (!this.queue.length) this.actionSentence = ""; }
   clearSelection() { this.activeVerb = null; this.firstObject = null; }
-  bounds(entity) { const spec = this.graphics[`graphic.${entity.graphic}`], baseSize = tuple(entity.size || `${spec.width},${spec.height}`, 2, entity.id), baseOrigin = entity.origin ? tuple(entity.origin, 2, `${entity.id}.origin`) : [baseSize[0] / 2, baseSize[1] / 2], scale = entity.id === this.game.protocol.player_actor ? interpolatedScale(entity.position[1], this.playerScaling) : 1, size = baseSize.map((value) => value * scale), origin = baseOrigin.map((value) => value * scale); return [entity.position[0] - origin[0], entity.position[1] - origin[1], ...size]; }
+  bounds(entity) { return entityBounds(entity, this.graphics, entity.id === this.game.protocol.player_actor ? this.playerScaling : null); }
   animationDuration(action, facing) { const animation = this.animations[`animation.${action}_${facing || "down"}`]; if (!animation?.frames) return 1; return animation.frames.split(";").reduce((sum, frame) => sum + tuple(frame.trim(), 5, "animation frame")[4], 0); }
   frame(now) { if (now - this.last >= 1000 / integer(this.game.runtime.ticks_per_second, "tick rate")) { this.step(); this.last = now; } this.draw(this.sceneSnapshot()); this.scheduler.requestFrame((time) => this.frame(time)); }
   draw(scene) {
     const c = this.ctx, room = this.rooms[scene.room], background = room?.room.background_color || "#000";
     c.fillStyle = background; c.fillRect(0, 0, this.width, this.height);
     c.save(); const [shakeX, shakeY] = shakeOffset(this.shakeTicks, integer(this.game.runtime.shake_amplitude || "2", "shake amplitude")); c.translate(shakeX, shakeY);
-    c.fillStyle = background; c.fillRect(0, 0, this.width, this.height);
-    const backgroundImage = room?.room.background_image;
-    if (backgroundImage) {
-      const bitmap = this.bitmaps[backgroundImage];
-      if (!bitmap) throw new Error(`${scene.room}.room.background_image references unknown graphic ${backgroundImage}`);
-      nearestNeighbor(c).drawImage(bitmap, 0, 0, this.width, this.height);
-    }
-    if (room) for (const entity of entityRenderOrder(scene.entities)) if (entity.visible !== "false") this.sprite(entity);
+    if (room) drawRoomScene(c, { width: this.width, height: this.height, room, entities: scene.entities, graphics: this.graphics, bitmaps: this.bitmaps, scalingStops: this.playerScaling, frameFor: entity => entity.id === this.game.protocol.player_actor ? this.currentFrame(entity) : null });
     if (room && (room.room.hotspot_overlay === "true" || this.game.runtime.hotspot_overlay === "true")) this.drawHotspots();
     if (!this.interfaceVisible) { c.restore(); return; }
     const inventory = this.inventoryLayout();
@@ -280,8 +274,7 @@ export class Runtime extends DeterministicVM {
     } c.restore();
   }
   drawBitmap(entity, bitmap, source, x, y, w, h) {
-    const angle = Number(entity.rotation || 0) * Math.PI / 180, args = source ? [bitmap, ...source, -w / 2, -h / 2, w, h] : [bitmap, -w / 2, -h / 2, w, h];
-    this.ctx.save(); this.ctx.translate(Math.round(x + w / 2), Math.round(y + h / 2)); if (angle) this.ctx.rotate(angle); nearestNeighbor(this.ctx).drawImage(...args); this.ctx.restore();
+    drawEntityBitmap(this.ctx, entity, bitmap, [x, y, w, h], source);
   }
   textRegion(spec, text) { const [x, y, w, h] = tuple(spec.rect, 4, "text region"), padding = integer(spec.padding || "4", "text padding"); this.ctx.fillStyle = this.ui.palette.panel; this.ctx.fillRect(x, y, w, h); this.ctx.fillStyle = this.ui.palette.text; this.ctx.font = this.ui.interface.font; this.ctx.textAlign = "left"; this.ctx.textBaseline = "middle"; this.ctx.fillText(text || "", x + padding, y + h / 2, w - padding * 2); }
   speech(actor, text) {
