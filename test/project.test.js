@@ -13,10 +13,11 @@ function fileLoad(overrides = {}, requested = []) {
 }
 
 test("injected loaders produce the complete structured project", async () => {
-  const requested = [], assetCalls = [];
+  const requested = [], assetCalls = [], configurations = [];
   const project = await loadProject("game/game.ini", {
     loadText: fileLoad({}, requested),
-    loadAssets: async (graphics, base) => { assetCalls.push([graphics, base]); return { actor: "decoded" }; }
+    loadAssets: async (graphics, base) => { assetCalls.push([graphics, base]); return { actor: "decoded" }; },
+    onConfiguration: (configuration) => configurations.push(configuration)
   });
   assert.equal(project.configuration.package.id, "anachronist");
   assert.ok(project.ui.interface);
@@ -32,6 +33,7 @@ test("injected loaders produce the complete structured project", async () => {
   assert.deepEqual(assetCalls.map(([, base]) => base), ["game/resources/"]);
   assert.ok(requested.includes("game/rooms/hall/room.ini"));
   assert.ok(requested.includes("game/items/key.ana"));
+  assert.equal(configurations[0].loading.size, "160,12");
 });
 
 test("missing optional package and room debug files become diagnostics", async () => {

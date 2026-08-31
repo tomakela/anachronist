@@ -28,7 +28,7 @@ export async function compileRoomScripts(scriptPath, roomIniPath, context, debug
 }
 
 /** Load and validate a package without assuming a browser, DOM, or transport. */
-export async function loadProject(entryPath, { loadText, loadAssets = async () => Object.create(null), debug = false, parser = parseIni, compiler = compile } = {}) {
+export async function loadProject(entryPath, { loadText, loadAssets = async () => Object.create(null), debug = false, parser = parseIni, compiler = compile, onConfiguration } = {}) {
   if (typeof loadText !== "function") throw new TypeError("loadProject requires a loadText(path, options) function");
   const diagnostics = [];
   const readIni = async (path) => parser(await loadText(path), path);
@@ -39,6 +39,7 @@ export async function loadProject(entryPath, { loadText, loadAssets = async () =
     if (source == null) diagnostics.push({ severity: "info", code: "optional-file-missing", path: debugPath, message: "Optional package debug configuration not found" });
     else configuration = overlayIni(configuration, parser(source, debugPath));
   }
+  onConfiguration?.(configuration);
   const resourceCataloguePath = resolvePackagePath(base, configuration.package.resource_catalogue);
   const resourceBase = siblingPath(resourceCataloguePath, "");
   const resourceCatalogue = await readIni(resourceCataloguePath);
