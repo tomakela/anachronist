@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.8.0",
     "@monaco-editor/react": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
@@ -18,5 +21,8 @@
     "react-dom": "latest",
     "typescript": "latest",
     "vite": "latest"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.0"
   }
 }

@@ -1,3 +1,4 @@
 node_modules/
 editor/dist/
 editor/*.tsbuildinfo
+editor/src-tauri/target/
