@@ -795,14 +795,23 @@ test("taking the wall clock creates the persistent fallen-clock scene", async ()
   ]);
 });
 
-test("the demo door can close, reopen, and be walked through", async () => {
+test("the demo door slams shut unless it is propped with the fallen clock", async () => {
   const handlers = compile(await readFile(new URL("../game/rooms/hall/script.ana", import.meta.url), "utf8"), { roomId: "hall", entities: ["door", "clock", "fallen_clock", "key", "bush", "stick"] });
   const handler = (event) => handlers.find((candidate) => candidate.event === event);
   assert.deepEqual(instantiate(handler("entity.close"), ["door"], { game: { door_open: true } }).map(({ op, target }) => [op, target]), [
     ["walk", "door"], ["set", "door.open"], ["set", "door.graphic"], ["set", "game.door_open"]
   ]);
-  assert.deepEqual(instantiate(handler("entity.open"), ["door"], { game: { door_unlocked: true } }).map(({ op, target }) => [op, target]), [
+  assert.deepEqual(instantiate(handler("entity.open"), ["door"], { game: { door_unlocked: true, door_propped: false } }).map(({ op, target, value }) => [op, target, value]), [
+    ["walk", "door", undefined], ["set", "door.open", true], ["set", "door.graphic", "placeholder.door_open"], ["set", "game.door_open", true],
+    ["set", "door.open", false], ["set", "door.graphic", "placeholder.door"], ["set", "game.door_open", false], ["say", undefined, "*slam*"]
+  ]);
+  assert.deepEqual(instantiate(handler("entity.open"), ["door"], { game: { door_unlocked: true, door_propped: true } }).map(({ op, target }) => [op, target]), [
     ["walk", "door"], ["set", "door.open"], ["set", "door.graphic"], ["set", "game.door_open"]
+  ]);
+  assert.deepEqual(instantiate(handler("entity.use_item"), ["fallen_clock", "door"], { game: { door_unlocked: true } }).map(({ op, target, value }) => [op, target, value]), [
+    ["walk", "door", undefined], ["remove", "fallen_clock", undefined], ["set", "game.door_propped", true],
+    ["set", "door.open", true], ["set", "door.graphic", "placeholder.door_open"], ["set", "game.door_open", true],
+    ["say", undefined, "The fallen clock makes an excellent doorstop."]
   ]);
   assert.deepEqual(instantiate(handler("entity.walk"), ["door"], { game: { door_open: false } }).map(({ op, target }) => [op, target]), [["walk", "door"]]);
   assert.deepEqual(instantiate(handler("entity.walk"), ["door"], { game: { door_open: true } }).map(({ op, target, room }) => [op, target, room]), [
