@@ -22,8 +22,8 @@ footer { grid-column: 1 / -1; background: #161a22; border-top: 1px solid #303746
 .playtest-tools { min-height: 42px; display: flex; gap: 7px; align-items: center; padding: 6px 10px; background: #1a1f29; border-bottom: 1px solid #303746; }
 .playtest-tools button, .playtest-tools select { background: #272d3a; color: #d4dbe5; border: 1px solid #3a4355; border-radius: 4px; padding: 5px 8px; }
 .playtest-tools span { margin-left: auto; font-size: 12px; }.playtest-tools .stale { color: #ffbd69; font-weight: 600; }.playtest-tools .fresh { color: #7fc99b; }
-.playtest-body { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
+.playtest-body { height: 0; flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
 .engine-preview { min-width: 0; min-height: 0; display: grid; place-items: center; overflow: hidden; background: #080a0e; position: relative; }
 .engine-preview canvas { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: crisp-edges; image-rendering: pixelated; }.engine-preview .mobile-settings { display: none; }
-.debugger { min-width: 0; min-height: 0; overflow-y: scroll; scrollbar-color: #4a5365 #171b24; scrollbar-width: thin; border-left: 1px solid #303746; background: #151922; }.debug-summary { display: flex; justify-content: space-between; padding: 10px 12px; color: #d2a45d; border-bottom: 1px solid #303746; }
+.debugger { height: 100%; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-color: #4a5365 #171b24; scrollbar-width: thin; border-left: 1px solid #303746; background: #151922; }.debug-summary { display: flex; justify-content: space-between; padding: 10px 12px; color: #d2a45d; border-bottom: 1px solid #303746; }
 .debugger details { border-bottom: 1px solid #292f3c; }.debugger summary { cursor: pointer; padding: 8px 12px; color: #aeb7c5; font-size: 12px; }.debugger pre { margin: 0; padding: 8px 12px 12px; color: #91a0b5; font: 11px/1.45 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
