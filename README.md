@@ -59,6 +59,52 @@ wire. The lamp's switch button is missing, so its newly powered mechanism can
 only be toggled by using the stick on it. These puzzle changes persist across
 room visits.
 
+### Current graphics and interface dimensions
+
+All dimensions below are **logical pixels**. The demo renders at 320×200 and
+the host scales that canvas to the available screen with nearest-neighbor
+sampling, so asset authors should work at these logical sizes rather than at a
+particular browser-window size. A room background image may have any source
+dimensions because it is stretched to the full 320×200 display; 320×200 is the
+recommended size when a background should map one source pixel to one logical
+pixel. The current rooms use flat `background_color` values instead of images.
+
+The lower 64 pixels are the interface: the command sentence occupies
+320×16 at `(0,136)`, and the controls occupy `y = 152–199`. The six verb buttons
+are each 40×24 in a 3×2 grid. Inventory begins at `(120,152)`, displays four
+40×48 item slots per row, and reserves the rightmost 16×48 area for its two
+scroll arrows. The 320×16 message region at the top of the display overlays the
+room rather than reducing its size. Speech boxes are 14 pixels high, with their
+width fitted to the text.
+
+Current bitmap and sprite sizes are:
+
+| Artwork | Logical render/frame size | Source bitmap or sheet size |
+| --- | ---: | ---: |
+| Room background | 320×200 (stretched) | 320×200 recommended |
+| Player | 16×32 | 32×256 (two columns and eight directional rows) |
+| Inventory item | 40×48 | 40×48 |
+| Door / open door | 32×64 | 32×64 |
+| Gate | 28×74 | 28×74 |
+| Fountain / splash | 52×50 | 52×50 |
+| Clock | 24×24 | 72×24 (three animation frames) |
+| Key | 12×8 | 12×8 |
+| Bush | 42×30 | 42×30 |
+| Stick | 28×8 | 28×8 |
+| Broken / fixed wire | 30×12 | 30×12 |
+| Lamp off / on | 18×34 | 18×34 |
+| Title | 216×35 | 216×35 |
+| Title subtitle | 153×14 | 153×14 |
+
+The coffee cup, coin, notebook, pencil, and handkerchief room placeholders are
+also currently 40×48. Catalogue `width` and `height` values are logical render
+dimensions; an entity's `size` can override them. Animation `frames` are source
+rectangles within a sheet, so the sheet itself may be larger than the rendered
+sprite. The authoritative values live in `game/game.ini` (display),
+`game/interface.ini` (UI), `game/resources/graphics.ini` and
+`game/resources/player.ini` (artwork), and each room's `room.ini` (entity
+overrides and placement).
+
 On touch-oriented devices, a relative drag cursor is enabled by default. A small
 settings button in the top-right switches between it and direct pointing. Relative movement is
 amplified by the package's `input.dragging_sensitivity` value, making precise
