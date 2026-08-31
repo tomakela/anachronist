@@ -1,6 +1,27 @@
 import type { ProjectAdapter, ProjectEntry } from "./types";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 
 type DirectoryHandle = FileSystemDirectoryHandle;
+
+interface NativeReadResult { content: string; lastModified?: number; }
+
+/** Native, writable project access supplied by the Tauri shell. */
+export class TauriProjectAdapter implements ProjectAdapter {
+  readonly writable = true;
+  readonly name: string;
+  private constructor(private root: string) { this.name = root.replaceAll("\\", "/").split("/").at(-1) || root; }
+
+  static available() { return isTauri(); }
+  static async open() {
+    const root = await invoke<string | null>("open_project");
+    return root ? new TauriProjectAdapter(root) : undefined;
+  }
+  async listFiles() { return invoke<ProjectEntry[]>("list_project_files", { root: this.root }); }
+  async readText(path: string) { return invoke<NativeReadResult>("read_project_text", { root: this.root, path }); }
+  async readBlob(path: string) { return new Blob([new Uint8Array(await invoke<number[]>("read_project_bytes", { root: this.root, path }))]); }
+  async writeText(path: string, content: string) { return invoke<number>("write_project_text", { root: this.root, path, content }); }
+  async currentModified(path: string) { return invoke<number>("project_file_modified", { root: this.root, path }); }
+}
 
 function projectPath(path: string) {
   const normalized = path.replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");

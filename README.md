@@ -167,3 +167,9 @@ pipeline used at game startup. `engine/runtime.js` separately exports `Runtime`;
 construct it with the loaded project and explicit `host` and `storage` adapters,
 plus optional `clock`, `scheduler`, and `initialRoom` values. The browser-specific
 fetch and DOM wiring remains in the thin `engine/bootstrap.js` entry point.
+
+## Editor
+
+The React editor can run in a browser or as a native Tauri 2 desktop
+application. See [`editor/README.md`](editor/README.md) for prerequisites and
+the development and release build commands.

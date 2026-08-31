@@ -8,6 +8,8 @@
   "scripts": {
     "test": "node --test",
     "editor:dev": "npm run dev --workspace editor",
-    "editor:build": "npm run build --workspace editor"
+    "editor:build": "npm run build --workspace editor",
+    "tauri:dev": "npm run tauri:dev --workspace editor",
+    "tauri:build": "npm run tauri:build --workspace editor"
   }
 }
