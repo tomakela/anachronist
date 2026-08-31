@@ -520,6 +520,18 @@ test("a touch tap dispatches its pointer action exactly once", () => {
   assert.deepEqual(calls[0], [{ type: "pointer", button: 0, point: [10, 20], fast: null }]);
 });
 
+test("a desktop double-click requests fast walking even when pointerdown has no click count", () => {
+  const runtime = Object.create(Runtime.prototype), calls = [];
+  Object.assign(runtime, {
+    eventPoint: () => [30, 40],
+    action: (...args) => calls.push(args)
+  });
+  let prevented = false;
+  runtime.pointerDoubleClick({ button: 0, preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.deepEqual(calls, [[{ type: "pointer", button: 0, point: [30, 40], fast: true }]]);
+});
+
 test("the secondary pointer action looks at the touched target", () => {
   const runtime = fallbackRuntime(), calls = [];
   Object.assign(runtime, {
