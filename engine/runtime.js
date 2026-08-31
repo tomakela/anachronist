@@ -54,6 +54,7 @@ export class Runtime extends DeterministicVM {
     this.host.addEventListener("pointerup", (event) => this.pointerUp(event));
     this.host.addEventListener("pointercancel", (event) => this.cancelTouch(event));
     this.host.addEventListener("lostpointercapture", (event) => this.cancelTouch(event));
+    this.canvas.addEventListener("dblclick", (event) => this.pointerDoubleClick(event));
     this.canvas.addEventListener("pointerleave", () => { this.hoverTarget = null; });
     this.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     this.canvas.addEventListener("keydown", (event) => this.keyboard(event));
@@ -158,6 +159,11 @@ export class Runtime extends DeterministicVM {
     this.touch = { id: event.pointerId, start: point, last: point, moved: false, long: false, startedAt: this.clock.now() };
     const pointerId = event.pointerId;
     this.touch.timer = this.scheduler.setTimeout(() => { if (this.touch?.id !== pointerId || this.touch.moved) return; this.touch.long = true; this.dispatchPhysicalTouch("long_press", event, this.touchCursor); }, this.longTouchMilliseconds);
+  }
+  pointerDoubleClick(event) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    this.action({ type: "pointer", button: 0, point: this.eventPoint(event), fast: true });
   }
   pointerMove(event) {
     if (event.pointerType !== "touch") { if (event.target === this.canvas) this.hover(event); return; }
