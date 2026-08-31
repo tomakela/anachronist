@@ -47,7 +47,7 @@ async function fetchBitmapSource(path, spec, fetcher) {
   throw new Error(`${spec.path}: HTTP ${response.status}`);
 }
 
-export async function loadBitmaps(catalogue, base, fetcher = fetch, decode = createImageBitmap, canvasFactory) {
+export async function loadBitmaps(catalogue, base, fetcher = fetch, decode = createImageBitmap, canvasFactory, onProgress) {
   const bitmaps = Object.create(null);
   await Promise.all(Object.entries(catalogue).filter(([section]) => section.startsWith("graphic.")).map(async ([section, spec]) => {
     const path = resolvePackagePath(base, spec.path);
@@ -57,6 +57,7 @@ export async function loadBitmaps(catalogue, base, fetcher = fetch, decode = cre
       ? await fetcher(`data:${spec.mime_type || "image/png"};base64,${(await source.response.text()).replace(/\s/g, "")}`).then((encoded) => encoded.blob())
       : await source.response.blob();
     bitmaps[section.slice(8)] = transparentBitmap(await decode(blob), spec.transparent_color, canvasFactory);
+    onProgress?.();
   }));
   return bitmaps;
 }
