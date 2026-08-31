@@ -90,16 +90,23 @@ on door.use_item(item) {
             set game.door_open = true
             set game.door_unlocked = true
             say "The key turns in the lock."
+            set door.open = false
+            set door.graphic = placeholder.door
+            set game.door_open = false
+            say "*slam*"
         }
     } else {
         if item == fallen_clock {
-            if game.door_open == true {
+            if game.door_unlocked == true {
                 walk player to door
                 remove fallen_clock from inventory
                 set game.door_propped = true
+                set door.open = true
+                set door.graphic = placeholder.door_open
+                set game.door_open = true
                 say "The fallen clock makes an excellent doorstop."
             } else {
-                say "I need to open the door before I can prop it open."
+                say "I need to unlock the door before I can prop it open."
             }
         } else {
             say "I can't do that."
@@ -113,6 +120,12 @@ on door.open() {
         set door.open = true
         set door.graphic = placeholder.door_open
         set game.door_open = true
+        if game.door_propped == false {
+            set door.open = false
+            set door.graphic = placeholder.door
+            set game.door_open = false
+            say "*slam*"
+        }
     } else {
         say "It is locked."
     }
