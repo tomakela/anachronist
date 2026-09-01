@@ -176,14 +176,14 @@ export class DeterministicVM {
     this.clearSelection();
   }
   perform(verb, target) { if (!target) return; this.interruptCommands(); this.actionSentence = this.verbSentence(verb, target); const commands = this.commands(`entity.${verb}`, [target]); if (commands) { if (verb === this.protocolValue("use_verb")) this.queue.push({ op: "animate", actor: this.protocolValue("player_actor"), animation: this.protocolValue("use_animation") }); this.queue.push(...commands); } else this.enqueueFallback(verb, [target]); }
-  /** Resolve an entity's authored approach point, defaulting to its visual centre. */
+  /** Resolve an entity's authored approach point, defaulting to its bottom centre. */
   walkTarget(target, fallback = null) {
     const entity = typeof target === "string" ? this.entities[target] : target;
     if (!entity) return fallback;
     if (entity.walk_to) return tuple(entity.walk_to, 2, `${entity.id}.walk_to`);
     if (typeof this.bounds === "function") {
       const [x, y, width, height] = this.bounds(entity);
-      return [x + width / 2, y + height / 2];
+      return [x + width / 2, y + height];
     }
     return entity.position ? [...entity.position] : fallback;
   }

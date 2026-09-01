@@ -405,10 +405,10 @@ test("clicking an entity without a walk handler uses its configured walk_to", ()
   assert.deepEqual(runtime.queue, [{ op: "walk", actor: "player", point: [90, 120], target: "door", manual: true }]);
 });
 
-test("entity walk targets default to the visual centre", () => {
+test("entity walk targets default to the visual bottom centre", () => {
   const runtime = fallbackRuntime();
   runtime.bounds = () => [80, 40, 30, 50];
-  assert.deepEqual(runtime.walkTarget("door"), [95, 65]);
+  assert.deepEqual(runtime.walkTarget("door"), [95, 90]);
 });
 
 test("even an empty object walk handler supersedes room walk_to metadata", () => {
