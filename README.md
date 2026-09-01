@@ -176,9 +176,11 @@ separate `entity.use` event. Inventory presentation is defined independently
 from room entities in
 `game/items/inventory.ini`; its `graphic` and `label` always win after pickup.
 Inventory-only handlers use explicit names such as `on inventory.key.look()`, so
-a room can separately define `on key.look()` for the key lying on the floor. The demo begins with a non-interactive,
-full-display bitmap title cut scene; after two seconds it enters the hall and
-restores the verb and inventory interface. Dialogue can
+a room can separately define `on key.look()` for the key lying on the floor. The
+demo begins with two non-interactive, full-display bitmap title cut scenes: the
+game title, followed by an island establishing shot. Each remains visible for
+two seconds unless advanced with a click, after which the hall restores the verb
+and inventory interface. Dialogue can
 contain any number of consecutive `say` or
 `narrate` commands; each is displayed in order, with its duration calculated
 from the configurable base, per-character, and minimum tick values in
