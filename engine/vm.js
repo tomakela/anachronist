@@ -155,7 +155,8 @@ export class DeterministicVM {
     if (!this.activeVerb) {
       this.interruptCommands(); this.actionSentence = this.phrase("walk_to", { target: target ? this.label(target) : "" }).trim();
       if (!target) this.queue = [{ op: "walk", actor: this.protocolValue("player_actor"), point: [Math.round(x), Math.round(y)], manual: true, fast }];
-      else if (!this.dispatch("entity.walk", [target])) this.queue = [{ op: "walk", actor: this.protocolValue("player_actor"), point: [Math.round(x), Math.round(y)], manual: true }];
+      else if (this.matchingHandler("entity.walk", [target])) this.dispatch("entity.walk", [target]);
+      else this.queue = [{ op: "walk", actor: this.protocolValue("player_actor"), point: this.walkTarget(target, [Math.round(x), Math.round(y)]), target, manual: true }];
       if (fast) this.accelerateCommands();
       return;
     }
@@ -175,6 +176,17 @@ export class DeterministicVM {
     this.clearSelection();
   }
   perform(verb, target) { if (!target) return; this.interruptCommands(); this.actionSentence = this.verbSentence(verb, target); const commands = this.commands(`entity.${verb}`, [target]); if (commands) { if (verb === this.protocolValue("use_verb")) this.queue.push({ op: "animate", actor: this.protocolValue("player_actor"), animation: this.protocolValue("use_animation") }); this.queue.push(...commands); } else this.enqueueFallback(verb, [target]); }
+  /** Resolve an entity's authored approach point, defaulting to its visual centre. */
+  walkTarget(target, fallback = null) {
+    const entity = typeof target === "string" ? this.entities[target] : target;
+    if (!entity) return fallback;
+    if (entity.walk_to) return tuple(entity.walk_to, 2, `${entity.id}.walk_to`);
+    if (typeof this.bounds === "function") {
+      const [x, y, width, height] = this.bounds(entity);
+      return [x + width / 2, y + height / 2];
+    }
+    return entity.position ? [...entity.position] : fallback;
+  }
   step() {
     this.tick++;
     this.backgroundTasks.step();
@@ -184,7 +196,7 @@ export class DeterministicVM {
     if (player?.actionTicks > 0) { if (--player.actionTicks === 0) player.action = null; return; }
     const command = this.queue[0]; if (!command) { this.actionSentence = ""; return; }
     if (command.op === "walk") {
-      const actor = this.entities[command.actor], target = command.point || this.entities[command.target]?.position;
+      const actor = this.entities[command.actor], target = command.point || this.walkTarget(command.target);
       if (!actor || !target) return void this.queue.shift();
       const isPlayer = actor.id === this.game.protocol.player_actor;
       if (isPlayer && !command.route) command.route = findWalkPath(actor.position, target, this.walkable, this.width, this.height);

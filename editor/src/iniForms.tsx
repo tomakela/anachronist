@@ -9,7 +9,7 @@ const schemas: Record<string, Field[]> = {
   input: fields("bindings", "dragging_sensitivity", "long_touch_milliseconds", "long_touch_move_tolerance", "double_touch_milliseconds", "double_touch_move_tolerance"),
   save: fields("format_version", "slot_policy"), protocol: fields("walk_command", "take_command", "player_actor", "look_verb", "use_verb", "use_animation", "pickup_animation"),
   room: fields("background_color", "background_graphic", "interactive", "interface_visible", "fullscreen", "player_scaling", "player_walk_speed_scaling"),
-  entity: fields("label", "graphic", "position", "size", "origin", "suggested_verb", "visible", "enabled", "rotation"),
+  entity: fields("label", "graphic", "position", "size", "origin", "walk_to", "suggested_verb", "visible", "enabled", "interactive", "rotation", "hotspot_rect", "hotspot_polygon"),
   spawn: fields("position"), trigger: fields("rect"), inventory: fields("label", "graphic", "suggested_verb", "script"),
   graphic: fields("path", "mime_type", "width", "height", "missing_color", "frames"), animation: fields("graphic", "width", "height", "frames"),
   catalogue: fields("format_version", "rooms", "items", "graphics", "player_animations"), action: fields("pointer_button", "touch", "keyboard_code"),

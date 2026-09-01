@@ -157,6 +157,12 @@ overlap, with visual render order deciding equal priorities. For authoring, set
 `hotspot_overlay = true` in `[room]` (or `[runtime]`) to draw labeled cyan
 hotspot outlines.
 
+Room entities can declare `walk_to = x,y` as the approach point used by both
+plain object clicks and script commands such as `walk player to door`. When it
+is omitted, walking targets the visual centre of the entity. An object-specific
+script handler such as `on door.walk()` takes precedence over this default
+click behavior, so it can perform conditional movement or another action.
+
 A room can set `background_image` to a graphic catalogue ID to stretch that
 bitmap across the logical display behind every entity. `background_color`
 remains the fallback and fills any edges exposed by screen shake. All bitmap
