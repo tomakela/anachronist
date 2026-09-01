@@ -46,8 +46,9 @@ to **Look**. Room entities declare it in `room.ini`, and inventory objects in
 `inventory.ini`; hovering an object subtly highlights its suggested verb. Either
 button advances displayed dialogue. Hovering an object previews the complete command sentence, while starting an interaction interrupts
 the current walk. Entity `position` values denote configurable sprite origins
-(the center by default), letting walk targets line up naturally with feet or
-knees. Taking and using objects also play directional one-shot animations.
+(the center by default). The supplied player uses the bottom-middle of the
+sprite, so the point moved through the room is where the actor's feet meet the
+ground. Taking and using objects also play directional one-shot animations.
 Each room's mutable entity state is retained between visits, so a taken object
 cannot reappear at its old room position when the player returns. The demo also
 records key acquisition in the persistent `game.key_taken` global for its game
@@ -159,7 +160,7 @@ hotspot outlines.
 
 Room entities can declare `walk_to = x,y` as the approach point used by both
 plain object clicks and script commands such as `walk player to door`. When it
-is omitted, walking targets the visual centre of the entity. An object-specific
+is omitted, walking targets the visual bottom-middle of the entity. An object-specific
 script handler such as `on door.walk()` takes precedence over this default
 click behavior, so it can perform conditional movement or another action.
 
