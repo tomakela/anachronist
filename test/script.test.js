@@ -392,8 +392,9 @@ const fallbackRuntime = (handlers = []) => {
   return runtime;
 };
 
-test("clicking an entity without a walk handler walks to the clicked point", () => {
+test("clicking an entity without a walk handler uses its configured walk_to", () => {
   const runtime = fallbackRuntime();
+  runtime.entities.door.walk_to = "90, 120";
   Object.assign(runtime, {
     interactive: true, activeVerb: null, firstObject: null, message: "", width: 320, height: 200,
     targetAt: () => "door", inventoryLayout: () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} }),
@@ -401,7 +402,27 @@ test("clicking an entity without a walk handler walks to the clicked point", () 
   });
   runtime.ui.accessibility = { walk_to: "Walk to {target}" };
   runtime.pointer({ button: 0, point: [111.4, 82.6] });
-  assert.deepEqual(runtime.queue, [{ op: "walk", actor: "player", point: [111, 83], manual: true }]);
+  assert.deepEqual(runtime.queue, [{ op: "walk", actor: "player", point: [90, 120], target: "door", manual: true }]);
+});
+
+test("entity walk targets default to the visual centre", () => {
+  const runtime = fallbackRuntime();
+  runtime.bounds = () => [80, 40, 30, 50];
+  assert.deepEqual(runtime.walkTarget("door"), [95, 65]);
+});
+
+test("even an empty object walk handler supersedes room walk_to metadata", () => {
+  const handler = compile("on door.walk() {\n}", { roomId: "hall", entities: ["door"] })[0];
+  const runtime = fallbackRuntime([handler]);
+  runtime.entities.door.walk_to = "90,120";
+  Object.assign(runtime, {
+    interactive: true, activeVerb: null, firstObject: null, message: "", width: 320, height: 200,
+    targetAt: () => "door", inventoryLayout: () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} }),
+    interruptCommands() { this.queue = []; }, actionSentence: ""
+  });
+  runtime.ui.accessibility = { walk_to: "Walk to {target}" };
+  runtime.pointer({ button: 0, point: [111, 83] });
+  assert.deepEqual(runtime.queue, []);
 });
 
 test("ground and inventory objects with the same id dispatch separate look handlers", () => {
