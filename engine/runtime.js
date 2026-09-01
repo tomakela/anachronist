@@ -79,6 +79,10 @@ export class Runtime extends DeterministicVM {
   settings() {
     const wrapper = this.document.createElement("div"); wrapper.className = "mobile-settings";
     const button = this.document.createElement("button"); button.type = "button"; button.textContent = "⚙"; button.ariaLabel = "Game settings"; button.ariaExpanded = "false";
+    if (this.debugMode) {
+      this.coordinateDisplay = this.document.createElement("output"); this.coordinateDisplay.className = "debug-coordinates"; this.coordinateDisplay.textContent = "x: —, y: —"; this.coordinateDisplay.ariaLabel = "Game coordinates";
+      wrapper.append(this.coordinateDisplay);
+    }
     const choices = this.document.createElement("fieldset"); choices.hidden = true;
     const legend = this.document.createElement("legend"); legend.textContent = "Game settings"; choices.append(legend);
     const debugRow = this.document.createElement("label"), debug = this.document.createElement("input"); debug.type = "checkbox"; debug.checked = this.debugMode;
@@ -166,14 +170,18 @@ export class Runtime extends DeterministicVM {
     this.action({ type: "pointer", button: 0, point: this.eventPoint(event), fast: true });
   }
   pointerMove(event) {
-    if (event.pointerType !== "touch") { if (event.target === this.canvas) this.hover(event); return; }
+    if (event.pointerType !== "touch") {
+      if (event.target === this.canvas) { const point = this.eventPoint(event); this.showCoordinates(point); this.updateHover(...point); }
+      return;
+    }
     if (!this.touch || this.touch.id !== event.pointerId) return;
     const point = this.eventPoint(event), delta = [point[0] - this.touch.last[0], point[1] - this.touch.last[1]];
     if (touchMoved(this.touch.start, point, this.longTouchMoveTolerance)) this.touch.moved = true;
     if (this.cursorMode === "direct") this.touchCursor = point;
     else this.touchCursor = dragCursor(this.touchCursor, delta, this.draggingSensitivity, this.width, this.height);
-    this.touch.last = point; this.updateHover(...this.touchCursor);
+    this.touch.last = point; this.showCoordinates(this.touchCursor); this.updateHover(...this.touchCursor);
   }
+  showCoordinates([x, y]) { if (this.coordinateDisplay) this.coordinateDisplay.textContent = `x: ${Math.floor(x)}, y: ${Math.floor(y)}`; }
   pointerUp(event) {
     if (event.pointerType !== "touch" || !this.touch || this.touch.id !== event.pointerId) return;
     (this.scheduler?.clearTimeout || globalThis.clearTimeout)(this.touch.timer);
