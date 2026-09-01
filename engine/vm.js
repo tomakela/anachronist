@@ -141,14 +141,14 @@ export class DeterministicVM {
     }
     if (selectedVerb) { this.stopWalking(); this.activeVerb = selectedVerb; this.firstObject = null; return; }
     const target = this.targetAt(x, y, button !== 2);
-    if (interfacePoint(x, y, this.ui, this.width, this.height) && !target) return;
+    if (button !== 2 && interfacePoint(x, y, this.ui, this.width, this.height) && !target) return;
     if (button === 2) {
       if (target) {
         this.clearSelection();
         const verb = this.suggestedVerb(target);
         if (verb === this.protocolValue("use_verb") && !this.matchingHandler(`entity.${verb}`, [target])) { this.activeVerb = verb; this.firstObject = target; this.hoverTarget = null; }
         else this.perform(verb, target);
-      }
+      } else this.clearSelection();
       return;
     }
     if (!this.activeVerb && this.inventory.includes(target)) return;

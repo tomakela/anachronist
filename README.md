@@ -178,9 +178,10 @@ from room entities in
 Inventory-only handlers use explicit names such as `on inventory.key.look()`, so
 a room can separately define `on key.look()` for the key lying on the floor. The
 demo begins with two non-interactive, full-display bitmap title cut scenes: the
-game title, followed by an island establishing shot. Each remains visible for
-two seconds unless advanced with a click, after which the hall restores the verb
-and inventory interface. Dialogue can
+game title, followed by an island establishing shot. The game title remains
+visible for two seconds and the establishing shot for three seconds unless
+advanced with a click, after which the hall restores the verb and inventory
+interface. Dialogue can
 contain any number of consecutive `say` or
 `narrate` commands; each is displayed in order, with its duration calculated
 from the configurable base, per-character, and minimum tick values in
