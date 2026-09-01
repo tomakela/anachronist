@@ -98,9 +98,7 @@ on fountain.use_item(item) {
       if item == coin {
         walk player to fountain
         remove coin from inventory
-        set fountain.graphic = placeholder.fountain_splash
         set game.coin_thrown = true
-        shake 8 ticks
         say "I toss the coin and make a wish."
       } else {
           say "That would not improve the fountain."
