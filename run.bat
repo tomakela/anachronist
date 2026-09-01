@@ -1,0 +1,1 @@
+npm exec --yes -- serve . -l 3000
