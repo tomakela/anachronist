@@ -3,7 +3,7 @@ import { BackgroundTasks, instantiate, textDuration } from "./script.js";
 import { bitmapPixels, nearestNeighbor } from "./bitmaps.js";
 import { SaveStorage, snapshotRuntime, validateSnapshot } from "./save.js";
 import { DeterministicVM } from "./vm.js";
-import { drawEntityBitmap, drawRoomScene, entityBounds } from "./renderer.js";
+import { drawEntityBitmap, drawRoomScene, entityBounds, isNullGraphic } from "./renderer.js";
 import { accelerateCommandQueue, advanceWalk, bitmapWalkRegion, dragCursor, enteredTriggers, entityHotspot, entityRenderOrder, entityTargetAt, interfacePoint, inventoryLastRow, inventoryPage, objectSuggestedVerb, parseScalingStops, pointInHotspot, retainedRoomEntities, roomEntryItems, shakeOffset, spriteAlphaHit, touchMoved, verbSentence } from "./interaction.js";
 
 export const debugUrl = (url, enabled) => { const result = new URL(url); if (enabled) result.searchParams.set("debug", ""); else result.searchParams.delete("debug"); return result.href; };
@@ -260,6 +260,7 @@ export class Runtime extends DeterministicVM {
   label(id) { return (this.inventory.includes(id) ? this.items[id]?.label : this.entities[id]?.label) || this.inventoryEntities[id]?.label || id?.replaceAll("_", " ") || ""; }
   sprite(entity) {
     const [x, y, w, h] = this.bounds(entity), graphic = this.graphics[`graphic.${entity.graphic}`], bitmap = this.bitmaps[entity.graphic], animation = entity.id === this.game.protocol.player_actor ? this.animations[`animation.${entity.action || (entity.moving ? "walking" : "idle")}_${entity.facing || "down"}`] : graphic;
+    if (isNullGraphic(entity.graphic)) return;
     if (bitmap) { this.drawBitmap(entity, bitmap, animation?.frames ? this.currentFrame(entity) : null, x, y, w, h); return; }
     this.ctx.fillStyle = this.graphics[`graphic.${entity.graphic}`]?.missing_color || "#ff00ff"; this.ctx.fillRect(Math.round(x), Math.round(y), w, h);
   }

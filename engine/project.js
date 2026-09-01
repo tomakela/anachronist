@@ -91,7 +91,7 @@ function validateReferences({ entryPath, rooms, items, graphics, handlers, diagn
     const roomPath = room.$syntax?.path || entryPath;
     const spawns = new Set(Object.keys(room).filter((id) => id.startsWith("spawn.")).map((id) => id.slice(6)));
     for (const [section, value] of Object.entries(room)) {
-      if (section.startsWith("entity.") && value.graphic && !graphicIds.has(value.graphic)) diagnostics.push(projectDiagnostic(roomPath, "graphic-not-found", `${section} references nonexistent graphic ${value.graphic}`));
+      if (section.startsWith("entity.") && value.graphic && value.graphic !== "null" && !graphicIds.has(value.graphic)) diagnostics.push(projectDiagnostic(roomPath, "graphic-not-found", `${section} references nonexistent graphic ${value.graphic}`));
       if (section.startsWith("trigger.")) {
         const destination = section.slice(8);
         if (!Object.hasOwn(rooms, destination)) diagnostics.push(projectDiagnostic(roomPath, "room-not-found", `${section} references nonexistent room ${destination}`));

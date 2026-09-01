@@ -10,6 +10,7 @@ import { SaveStorage, snapshotRuntime, stableStringify, validateSnapshot } from 
 import { parseActionBindings } from "../engine/input.js";
 import { Runtime } from "../engine/bootstrap.js";
 import { DeterministicVM, prepareItemUse } from "../engine/vm.js";
+import { drawRoomScene } from "../engine/renderer.js";
 const ITEM_USE_PROTOCOL = { walk_command: "walk", take_command: "take", player_actor: "player", use_animation: "use" };
 
 test("runtime saves deterministically round-trip durable world state", () => {
@@ -786,6 +787,21 @@ test("rooms draw a configured bitmap behind their entities with nearest-neighbor
   });
   runtime.draw({ room: "hall", entities: {} });
   assert.deepEqual(calls, [[false, "bitmap", 0, 0, 320, 200]]);
+});
+
+test("null graphics preserve entity bounds without drawing a placeholder", () => {
+  const fills = [], context = {
+    fillStyle: "", imageSmoothingEnabled: true,
+    fillRect(...args) { fills.push(args); }, save() {}, restore() {}, translate() {}, drawImage() {}
+  };
+  drawRoomScene(context, {
+    width: 320, height: 200, room: { room: { background_color: "#000" } },
+    entities: { painting: { id: "painting", graphic: "null", position: [50, 60], size: "20,30" } },
+    graphics: {}, bitmaps: {}
+  });
+  assert.deepEqual(fills, [[0, 0, 320, 200]]);
+  const runtime = Object.assign(Object.create(Runtime.prototype), { graphics: {}, bitmaps: {}, playerScaling: null, game: { protocol: { player_actor: "player" } } });
+  assert.equal(runtime.hitEntity({ id: "painting", graphic: "null", position: [50, 60], size: "20,30" }, [50, 60]), true);
 });
 
 test("taking the wall clock creates the persistent fallen-clock scene", async () => {

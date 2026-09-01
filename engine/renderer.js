@@ -2,6 +2,9 @@ import { tuple } from "./ini.js";
 import { nearestNeighbor } from "./bitmaps.js";
 import { entityRenderOrder, interpolatedScale } from "./interaction.js";
 
+/** An explicit null graphic keeps an entity's geometry without drawing a sprite. */
+export const isNullGraphic = (graphic) => graphic == null || graphic === "null";
+
 /** Runtime/editor shared sprite geometry. Position is the sprite origin in room space. */
 export function entityBounds(entity, graphics, scalingStops = null) {
   const spec = graphics[`graphic.${entity.graphic}`] || {};
@@ -35,6 +38,7 @@ export function drawRoomScene(context, { width, height, room, entities, graphics
   for (const entity of entityRenderOrder(entities)) {
     if (entity.visible === "false") continue;
     const bounds = entityBounds(entity, graphics, entity.id === "player" ? scalingStops : null);
+    if (isNullGraphic(entity.graphic)) continue;
     const bitmap = bitmaps[entity.graphic];
     if (bitmap) drawEntityBitmap(context, entity, bitmap, bounds, frameFor(entity));
     else { context.fillStyle = graphics[`graphic.${entity.graphic}`]?.missing_color || "#ff00ff"; context.fillRect(...bounds); }

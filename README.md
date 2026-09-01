@@ -147,6 +147,9 @@ row.
 Entity pointing normally uses those sprite bounds. Authors can replace that
 fallback with an absolute room-space `hotspot_rect = x,y,width,height` or
 `hotspot_polygon = x,y; x,y; x,y` (three or more points). Set
+`graphic = null` on an entity whose artwork is already part of the room
+background; its declared `size` and `position` still provide interactive bounds,
+but no sprite or missing-graphic fallback is drawn. Set
 `alpha_hit_test = true` to ignore transparent pixels when using sprite bounds;
 the transparent-color-processed bitmap pixels are cached, and animated actors
 use their current frame. Higher `hotspot_priority` values deliberately win an
