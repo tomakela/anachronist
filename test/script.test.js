@@ -561,6 +561,19 @@ test("the secondary pointer can suggest the object already selected by another v
   assert.equal(runtime.firstObject, null);
 });
 
+test("the secondary pointer clears the selected verb when no object is targeted", () => {
+  const runtime = fallbackRuntime();
+  Object.assign(runtime, {
+    interactive: true, activeVerb: "use", firstObject: "key", message: "", width: 320, height: 200,
+    inventoryLayout: () => ({ upRect: [0, 0, 0, 0], downRect: [0, 0, 0, 0], page: {} }),
+    targetAt: () => null
+  });
+  runtime.ui.sentence_region = { rect: "0,0,100,20" };
+  runtime.inputAction("pointer_secondary", { point: [10, 10] });
+  assert.equal(runtime.activeVerb, null);
+  assert.equal(runtime.firstObject, null);
+});
+
 test("objects customize the secondary-pointer verb with look as the default", () => {
   assert.equal(objectSuggestedVerb({}, ["look", "take"]), "look");
   assert.equal(objectSuggestedVerb({ suggested_verb: "take" }, ["look", "take"]), "take");
