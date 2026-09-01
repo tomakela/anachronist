@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { compileRoomScripts, debugModeFromSearch, debugUrl, fetchOptionalText, overlayIni, siblingPath } from "../engine/bootstrap.js";
+import { Runtime } from "../engine/runtime.js";
 import { parseIni } from "../engine/ini.js";
 
 test("debug mode is enabled by presence of the URL flag", () => {
@@ -48,4 +49,10 @@ test("missing room debug script is optional but malformed debug script surfaces"
 test("debug checkbox URL updates preserve unrelated query parameters", () => {
   assert.equal(debugUrl("https://example.test/game?slot=2#scene", true), "https://example.test/game?slot=2&debug=#scene");
   assert.equal(debugUrl("https://example.test/game?slot=2&debug#scene", false), "https://example.test/game?slot=2#scene");
+});
+
+test("debug coordinates use integer game-space positions", () => {
+  const runtime = { coordinateDisplay: { textContent: "" } };
+  Runtime.prototype.showCoordinates.call(runtime, [123.9, 45.2]);
+  assert.equal(runtime.coordinateDisplay.textContent, "x: 123, y: 45");
 });

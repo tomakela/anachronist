@@ -10,7 +10,8 @@
       body { background: #000; }
       #engine-host { display: grid; place-items: center; position: relative; touch-action: none; }
       canvas { display: block; width: var(--game-width); height: var(--game-height); image-rendering: crisp-edges; image-rendering: pixelated; cursor: crosshair; outline: none; touch-action: none; }
-      .mobile-settings { position: fixed; z-index: 2; top: max(6px, env(safe-area-inset-top)); right: max(6px, env(safe-area-inset-right)); user-select: none; -webkit-user-select: none; }
+      .mobile-settings { position: fixed; z-index: 2; top: max(6px, env(safe-area-inset-top)); right: max(6px, env(safe-area-inset-right)); display: flex; align-items: center; gap: 8px; user-select: none; -webkit-user-select: none; }
+      .mobile-settings .debug-coordinates { min-width: 92px; padding: 4px 7px; border: 1px solid #d3a94f; border-radius: 4px; color: #f4d58a; background: #101b34; font: 13px/20px ui-monospace, monospace; text-align: center; }
       .mobile-settings > button { width: 34px; height: 34px; padding: 0; border: 1px solid #d3a94f; border-radius: 4px; color: #f4d58a; background: #101b34; font-size: 18px; }
       .mobile-settings fieldset { position: absolute; top: 38px; right: 0; width: max-content; margin: 0; padding: 10px; border: 1px solid #d3a94f; color: #f4d58a; background: #101b34; font: 14px sans-serif; }
       .mobile-settings label { display: block; padding: 5px 2px; }
