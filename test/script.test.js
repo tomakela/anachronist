@@ -782,6 +782,24 @@ test("walk paths can move diagonally around obstacles without cutting corners", 
   assert.deepEqual(route, [[0, 1], [1, 1], [2, 1]]);
 });
 
+test("walk paths meet an obstacle on the requested line before following its edge", () => {
+  const walkable = ([x, y]) => x !== 3 || y === 0;
+  const route = findWalkPath([0, 4], [6, 2], walkable, 7, 5);
+  assert.deepEqual(route[0], [2, 3]);
+  assert.ok(route.slice(1).every((point, index) => {
+    const previous = route[index];
+    return Math.abs(point[0] - previous[0]) + Math.abs(point[1] - previous[1]) === 1;
+  }));
+});
+
+test("leftward walk paths follow the upper edge when the click is higher", () => {
+  const walkable = ([x, y]) => x !== 3 || y === 0;
+  const route = findWalkPath([6, 4], [0, 2], walkable, 7, 5);
+  assert.deepEqual(route[0], [4, 3]);
+  assert.equal(route.some(([, y]) => y > 3), false);
+  assert.deepEqual(route.at(-1), [0, 2]);
+});
+
 test("walk paths choose the closest reachable point for a disallowed click", () => {
   const walkable = ([x]) => x < 2;
   const route = findWalkPath([0, 2], [4, 2], walkable, 5, 5);
