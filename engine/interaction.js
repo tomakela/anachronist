@@ -102,44 +102,63 @@ export function findWalkPath(position, target, walkable, width, height) {
     : [Math.round(position[0]), Math.round(position[1])];
   const goal = [Math.round(target[0]), Math.round(target[1])];
   const inside = ([x, y]) => !bounded || (x >= 0 && y >= 0 && x < width && y < height);
-  const straightRouteIsWalkable = () => {
-    if (!goal.every(Number.isFinite) || !inside(goal)) return false;
+  const directPixels = () => {
+    if (!goal.every(Number.isFinite) || !inside(goal)) return [];
     const dx = goal[0] - start[0], dy = goal[1] - start[1], samples = Math.max(Math.abs(dx), Math.abs(dy));
+    const pixels = [];
     for (let step = 1; step <= samples; step++) {
-      if (!walkable([start[0] + dx * step / samples, start[1] + dy * step / samples])) return false;
+      const point = [Math.round(start[0] + dx * step / samples), Math.round(start[1] + dy * step / samples)];
+      if (pixels.at(-1)?.[0] !== point[0] || pixels.at(-1)?.[1] !== point[1]) pixels.push(point);
     }
-    return true;
+    return pixels;
   };
+  const direct = directPixels();
+  const firstBlocked = direct.findIndex((point, step) => {
+    if (!walkable(point)) return true;
+    const previous = direct[step - 1] || start;
+    const dx = point[0] - previous[0], dy = point[1] - previous[1];
+    return dx !== 0 && dy !== 0
+      && (!walkable([previous[0] + dx, previous[1]]) || !walkable([previous[0], previous[1] + dy]));
+  });
   // Do not turn an unobstructed walk into a grid-shaped route. Apart from
   // looking natural, one direct waypoint preserves the requested heading.
-  if (straightRouteIsWalkable()) return start[0] === goal[0] && start[1] === goal[1] ? [] : [goal];
+  if (direct.length && firstBlocked < 0) return [goal];
+  if (!direct.length && start[0] === goal[0] && start[1] === goal[1]) return [];
   if (!bounded) return [];
   const index = ([x, y]) => y * width + x;
-  const points = [[...start]], parents = new Int32Array(width * height).fill(-1);
-  const visited = new Uint8Array(width * height); visited[index(start)] = 1;
-  let head = 0, best = start, bestDistance = Infinity;
+  // Follow the requested line until it meets the mask. Searching only after
+  // that point prevents the shortest-path search from veering away early (and
+  // from choosing a visibly different route depending on travel direction).
+  const lineEnd = firstBlocked > 0 ? direct[firstBlocked - 1] : start;
+  const points = [[...lineEnd]], parents = new Int32Array(width * height).fill(-1);
+  const visited = new Uint8Array(width * height); visited[index(lineEnd)] = 1;
+  let head = 0, best = lineEnd, bestDistance = Infinity;
   const distanceToGoal = ([x, y]) => (x - goal[0]) ** 2 + (y - goal[1]) ** 2;
   while (head < points.length) {
     const point = points[head++], distance = distanceToGoal(point);
     if (distance < bestDistance) { best = point; bestDistance = distance; }
     if (distance === 0) { best = point; break; }
-    for (const [dx, dy] of [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]) {
+    // Cardinal steps hug the edge of blocked pixels instead of cutting away
+    // from it diagonally. Prefer steps which approach the click so equal routes
+    // go above an obstacle for a higher click and below it for a lower click.
+    const steps = [[1, 0], [0, 1], [-1, 0], [0, -1]]
+      .sort(([ax, ay], [bx, by]) => distanceToGoal([point[0] + ax, point[1] + ay]) - distanceToGoal([point[0] + bx, point[1] + by]));
+    for (const [dx, dy] of steps) {
       const next = [point[0] + dx, point[1] + dy];
       if (!inside(next)) continue;
       const nextIndex = index(next);
       if (visited[nextIndex] || !walkable(next)) continue;
-      // A diagonal may not squeeze through the touching corners of two
-      // blocked pixels, since the actor's continuous path crosses that corner.
-      if (dx && dy && (!walkable([point[0] + dx, point[1]]) || !walkable([point[0], point[1] + dy]))) continue;
       visited[nextIndex] = 1; parents[nextIndex] = index(point); points.push(next);
     }
   }
   const route = [];
-  for (let current = index(best), startIndex = index(start); current !== startIndex;) {
+  for (let current = index(best), startIndex = index(lineEnd); current !== startIndex;) {
     if (current < 0) return [];
     route.push([current % width, Math.floor(current / width)]); current = parents[current];
   }
-  return route.reverse();
+  route.reverse();
+  if (lineEnd[0] !== start[0] || lineEnd[1] !== start[1]) route.unshift(lineEnd);
+  return route;
 }
 
 /** Mark only the current explicitly skippable scene for safe acceleration. */
