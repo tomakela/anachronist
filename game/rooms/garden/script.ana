@@ -1,7 +1,4 @@
 on enter() {
-    if game.coin_thrown == true {
-        set fountain.graphic = placeholder.fountain_splash
-    }
     if game.wire_fixed == true {
         set wire.graphic = placeholder.wire_fixed
     }
@@ -78,6 +75,7 @@ on lamp.use_item(item) {
                 set lamp.graphic = placeholder.lamp_on
                 set game.lamp_on = true
                 say "I push the hidden mechanism with the stick. The lamp flickers to life."
+                narrate "END OF DEMO! CONGRATULATIONS!"
             }
         }
     } else {

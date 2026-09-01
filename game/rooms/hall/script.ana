@@ -60,6 +60,7 @@ on clock.take() {
     hide clock
     show fallen_clock
     set game.clock_fallen = true
+    walk player to 193,109
     shake 24 ticks
     say "Ooops"
 }
@@ -98,6 +99,9 @@ on door.use_item(item) {
     } else {
         if item == fallen_clock {
             if game.door_unlocked == true {
+                walk player to fallen_clock
+                take fallen_clock
+                set game.fallen_clock_taken = true
                 walk player to door
                 remove fallen_clock from inventory
                 set game.door_propped = true
