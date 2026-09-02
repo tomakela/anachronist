@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anachronist graphics</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: #171717;
+      color: #f4f4f4;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: clamp(1rem, 3vw, 2.5rem);
+    }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2.5rem); }
+    header p { margin: 0; color: #a8a8a8; }
+
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+      gap: 1rem;
+    }
+
+    .asset {
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      border: 1px solid #3d3d3d;
+      border-radius: 0.5rem;
+      background: #222;
+    }
+
+    .preview {
+      display: grid;
+      place-items: center;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      padding: 0.75rem;
+      background-color: #b7b7b7;
+      background-image:
+        linear-gradient(45deg, #8d8d8d 25%, transparent 25%),
+        linear-gradient(-45deg, #8d8d8d 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #8d8d8d 75%),
+        linear-gradient(-45deg, transparent 75%, #8d8d8d 75%);
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+      background-size: 16px 16px;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+    }
+
+    figcaption {
+      overflow: hidden;
+      padding: 0.7rem 0.8rem;
+      color: #ddd;
+      font-size: 0.8rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .error { color: #7a1111; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Graphics</h1>
+    <p id="asset-count"></p>
+  </header>
+  <main class="gallery" id="gallery"></main>
+
+  <script type="module">
+    const assetPaths = [
+      "game/resources/images/actor.png.base64",
+      "game/resources/images/bush.png.base64",
+      "game/resources/images/clock.png.base64",
+      "game/resources/images/coffee-cup.png.base64",
+      "game/resources/images/coin.png.base64",
+      "game/resources/images/door-open.png.base64",
+      "game/resources/images/door.png.base64",
+      "game/resources/images/fountain-splash.png.base64",
+      "game/resources/images/fountain.png.base64",
+      "game/resources/images/garden.png",
+      "game/resources/images/garden_mask.png",
+      "game/resources/images/gate.png.base64",
+      "game/resources/images/hall.png",
+      "game/resources/images/hall_mask.png",
+      "game/resources/images/handkerchief.png.base64",
+      "game/resources/images/inventory-coffee-cup.png.base64",
+      "game/resources/images/inventory-coin.png.base64",
+      "game/resources/images/inventory-fallen-clock.png.base64",
+      "game/resources/images/inventory-handkerchief.png.base64",
+      "game/resources/images/inventory-key.png.base64",
+      "game/resources/images/inventory-notebook.png.base64",
+      "game/resources/images/inventory-pencil.png.base64",
+      "game/resources/images/inventory-stick.png.base64",
+      "game/resources/images/island.png",
+      "game/resources/images/key.png.base64",
+      "game/resources/images/key_on_ground.png",
+      "game/resources/images/key_on_wire.png",
+      "game/resources/images/lamp-off.png.base64",
+      "game/resources/images/lamp-on.png.base64",
+      "game/resources/images/notebook.png.base64",
+      "game/resources/images/pencil.png.base64",
+      "game/resources/images/stick.png.base64",
+      "game/resources/images/title-anachronist.png.base64",
+      "game/resources/images/title-island-caption.png.base64",
+      "game/resources/images/title-subtitle.png.base64",
+      "game/resources/images/wire-broken.png.base64",
+      "game/resources/images/wire-fixed.png.base64"
+    ];
+
+    const gallery = document.querySelector("#gallery");
+    document.querySelector("#asset-count").textContent = `${assetPaths.length} PNG assets`;
+
+    for (const path of assetPaths) {
+      const encoded = path.endsWith(".base64");
+      const filename = path.split("/").pop().replace(/\.base64$/, "");
+      const figure = document.createElement("figure");
+      const preview = document.createElement("div");
+      const image = document.createElement("img");
+      const caption = document.createElement("figcaption");
+
+      figure.className = "asset";
+      preview.className = "preview";
+      image.alt = filename;
+      image.loading = "lazy";
+      caption.textContent = filename;
+      preview.append(image);
+      figure.append(preview, caption);
+      gallery.append(figure);
+
+      if (encoded) {
+        fetch(path)
+          .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.text();
+          })
+          .then((base64) => {
+            image.src = `data:image/png;base64,${base64.replace(/\s/g, "")}`;
+          })
+          .catch((error) => {
+            preview.classList.add("error");
+            preview.textContent = `Could not load: ${error.message}`;
+          });
+      } else {
+        image.src = path;
+      }
+    }
+  </script>
+</body>
+</html>
